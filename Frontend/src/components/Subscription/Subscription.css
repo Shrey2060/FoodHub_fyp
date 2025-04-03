@@ -1,0 +1,14 @@
+.sub-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.subscription-btn{
+    background-color: #4CAF50;
+    color: white;
+    font-weight: bold;
+    padding: 12px;
+    width: 120px;
+    border-radius: 6px;
+}

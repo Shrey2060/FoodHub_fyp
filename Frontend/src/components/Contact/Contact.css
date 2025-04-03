@@ -1,0 +1,63 @@
+/* Container */
+.contact-container {
+    max-width: 900px;
+    margin: auto;
+    padding: 40px 10%;
+    text-align: center;
+}
+
+/* Heading */
+.contact-container h1 {
+    font-size: 36px;
+    font-weight: 700;
+    color: #333;
+    margin-bottom: 16px;
+}
+
+/* Paragraph */
+.contact-container p {
+    font-size: 18px;
+    font-weight: 300;
+    color: #555;
+    line-height: 1.6;
+    margin-bottom: 30px;
+}
+
+/* Contact Details */
+.contact-details {
+    list-style: none;
+    padding: 0;
+    margin-bottom: 40px;
+}
+
+.contact-details li {
+    font-size: 18px;
+    font-weight: 400;
+    color: #222;
+    padding: 8px 0;
+    transition: color 0.3s ease-in-out;
+}
+
+/* Hover Effect */
+.contact-details li:hover {
+    color: #ff6b00;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .contact-container {
+        padding: 24px 5%;
+    }
+
+    .contact-container h1 {
+        font-size: 28px;
+    }
+
+    .contact-container p {
+        font-size: 16px;
+    }
+
+    .contact-details li {
+        font-size: 16px;
+    }
+}

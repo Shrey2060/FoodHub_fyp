@@ -1,0 +1,8 @@
+
+POST https://a.khalti.com/api/v2/epayment/lookup/ HTTP/1.1
+Content-Type: application/json
+Authorization: key d21287580fd347d391b98004eafd4880
+
+{
+    "pidx": "GE3xLoVAUPGJUX3GHmtEGX"
+}

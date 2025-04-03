@@ -1,0 +1,131 @@
+.container {
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.btn-div {
+  display: flex;
+  gap: 20px;
+}
+
+.nav-div {
+  display: flex;
+  gap: 24px;
+}
+
+.login-btn {
+  background-color: #ff4500;
+  font-size: 18px;
+  width: 100px;
+  color: white;
+  border: none;
+  border-radius: 24px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.3s;
+  padding: 6px;
+}
+
+.signup-btn {
+  background-color: none;
+  font-size: 18px;
+  width: 100px;
+  color: black;
+  border: 1px solid black;
+  border-radius: 24px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.3s;
+  padding: 6px;
+}
+
+.signup-btn:hover {
+  background-color: #ff5500;
+  color: white;
+  transition: background-color 0.3s, transform 0.3s; /* Added transition for transform */
+  border: none;
+  transform: scale(1.1); /* Adds scale effect */
+}
+
+.login-btn:hover {
+    background-color: #ff5500;
+    color: white;
+    transition: background-color 0.3s, transform 0.3s; /* Added transition for transform */
+    border: none;
+    transform: scale(1.1); /* Adds scale effect */
+}
+.nav-item {
+  font-size: 18px;
+  background: none; 
+  border: none;
+  font-weight: 300;
+  color: #000;
+  cursor: pointer;
+  text-decoration: none;
+  padding: 5px 0;
+  margin: 0 10px;
+  outline: none;
+  position: relative;
+  transition: color 0.3s ease-in-out;
+}
+
+/* Hover effect */
+.nav-item:hover {
+  color: #ff6600; /* Orange text color */
+}
+
+/* Underline effect */
+.nav-item::after {
+  content: "";
+  display: block;
+  width: 0;
+  height: 2px;
+  background: #ff6600;
+  transition: width 0.3s ease-in-out;
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+}
+
+/* Expand underline on hover */
+.nav-item:hover::after {
+  width: 100%;
+}
+
+/* Keep underline for active page */
+.nav-item.active {
+  color: #ff6600; /* Keep text orange for active link */
+  font-weight: 500;
+}
+
+.nav-item.active::after {
+  width: 100%; /* Keep underline visible */
+}
+
+.logout-btn {
+  background-color: none;
+  font-size: 18px;
+  width: 100px;
+  color: black;
+  border: 1px solid black;
+  border-radius: 24px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.3s;
+  padding: 6px;
+}
+
+.logout-btn:hover {
+  background-color: #ff5500;
+  color: white;
+  transition: background-color 0.3s, transform 0.3s; /* Added transition for transform */
+  border: none;
+  transform: scale(1.1); /* Adds scale effect */
+}
+
+
+
+
+

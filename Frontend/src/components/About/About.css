@@ -1,0 +1,105 @@
+.about-container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap; /* Ensures responsiveness */
+    padding: 40px 10%;
+    gap: 40px;
+}
+
+/* Image Container */
+.about-div {
+    flex: 1;
+    max-width: 500px; /* Limits image width for balance */
+}
+
+.about-div img {
+    width: 100%;
+    height: auto;
+    border-radius: 12px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+    transition: transform 0.3s ease-in-out;
+}
+
+/* Hover effect for image */
+.about-div img:hover {
+    transform: scale(1.05);
+}
+
+/* Text Content */
+.info-div {
+    flex: 1;
+    max-width: 600px;
+}
+
+/* Heading */
+.info-div h2 {
+    font-size: 32px;
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 20px;
+    line-height: 1.4;
+}
+
+/* Paragraphs */
+.info-div p {
+    font-size: 18px;
+    font-weight: 300;
+    color: #555;
+    line-height: 1.6;
+    margin-bottom: 16px;
+}
+
+/* Fade-in animation */
+.about-container {
+    opacity: 0;
+    transform: translateY(30px);
+    animation: fadeIn 0.8s ease-out forwards;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Responsive Design */
+@media (max-width: 1024px) {
+    .about-container {
+        flex-direction: column;
+        text-align: center;
+    }
+
+    .info-div {
+        max-width: 90%;
+    }
+}
+
+@media (max-width: 768px) {
+    .info-div h2 {
+        font-size: 28px;
+    }
+
+    .info-div p {
+        font-size: 16px;
+    }
+}
+
+@media (max-width: 480px) {
+    .about-container {
+        padding: 24px 5%;
+    }
+
+    .info-div h2 {
+        font-size: 24px;
+    }
+
+    .info-div p {
+        font-size: 14px;
+    }
+}

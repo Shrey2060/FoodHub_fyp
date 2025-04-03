@@ -1,0 +1,126 @@
+.footer {
+    background-color: #ff6b00;
+    padding: 40px 0;
+    color: white;
+    margin-top: 24px;
+}
+
+.main-container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap; /* Allows wrapping on smaller screens */
+    padding: 24px 10%;
+}
+
+/* Section Titles */
+.footer h4 {
+    text-align: center;
+    font-weight: 400;
+    font-size: 28px;
+    margin-bottom: 12px;
+}
+
+/* Paragraphs */
+.footer p {
+    text-align: center;
+    font-size: 18px;
+    font-weight: 300;
+    max-width: 600px;
+    margin: auto;
+}
+
+/* Links Section */
+.link-container ul {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 0;
+}
+
+.link-container ul li {
+    list-style-type: none;
+    font-size: 18px;
+    font-weight: 300;
+    transition: color 0.3s ease-in-out;
+    cursor: pointer;
+}
+
+/* Hover Effect for Links */
+.link-container ul li:hover {
+    color: #ffd700; /* Gold color for better contrast */
+}
+
+/* Buttons */
+button {
+    background: none;
+    border: none;
+    font-size: 18px;
+    font-weight: 300;
+    color: white;
+    cursor: pointer;
+    transition: color 0.3s ease-in-out, transform 0.2s ease-in-out;
+}
+
+/* Hover Effect for Buttons */
+button:hover {
+    color: #ffd700; /* Gold effect */
+    transform: scale(1.05); /* Slight increase for interaction */
+}
+
+/* Footer Bottom Section */
+.footer-bottom {
+    text-align: center;
+    padding: 16px 10%;
+    font-size: 16px;
+    font-weight: 300;
+    border-top: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+/* Responsive Design */
+@media (max-width: 1024px) {
+    .main-container {
+        flex-direction: column;
+        text-align: center;
+        gap: 24px;
+    }
+
+    .link-container ul {
+        align-items: center;
+    }
+}
+
+@media (max-width: 768px) {
+    .footer h4 {
+        font-size: 24px;
+    }
+
+    .footer p,
+    .link-container ul li,
+    button {
+        font-size: 16px;
+    }
+}
+
+@media (max-width: 480px) {
+    .footer {
+        padding: 24px 0;
+    }
+
+    .main-container {
+        padding: 16px 5%;
+    }
+
+    .footer h4 {
+        font-size: 22px;
+    }
+
+    .footer p {
+        font-size: 14px;
+    }
+
+    .link-container ul li,
+    button {
+        font-size: 14px;
+    }
+}

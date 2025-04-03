@@ -1,0 +1,14 @@
+.invoice-container {
+    width: 50%;
+    margin: 20px auto;
+    padding: 20px;
+    border: 1px solid #ddd;
+    box-shadow: 2px 2px 10px rgba(0, 0, 0, 0.1);
+    background-color: white;
+  }
+  
+  .invoice-details {
+    font-size: 16px;
+    line-height: 1.5;
+  }
+  

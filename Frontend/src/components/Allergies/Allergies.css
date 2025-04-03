@@ -1,0 +1,93 @@
+.swipper {
+    display: flex;
+    flex-direction: column;
+    gap: 30px;
+    justify-content: center;
+    align-items: center;
+    position: relative;
+    width: 100%;
+    overflow: hidden;
+}
+
+.slider-container {
+    position: relative;
+    width: 90%;
+    max-width: 1200px;
+    margin: auto;
+}
+
+.card {
+    display: flex;
+    gap: 28px;
+}
+
+.search-bar {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.allergies-types {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.allergies-types h1 {
+    font-size: 48px;
+    color: black;
+    font-weight: 600;
+}
+
+.allergies-types span {
+    font-size: 48px;
+    color: #ff6b00;
+    font-weight: 600;
+}
+
+.btn-bar {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 24px;
+}
+
+.btn-bar button {
+    width: 160px;
+    height: 48px;
+    background-color: transparent;
+    color: black;
+    font-weight: 600;
+    border: 1px solid black;
+    cursor: pointer;
+    font-size: 24px;
+    border-radius: 24px;
+    transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+.btn-bar button.active,
+.btn-bar button:hover {
+    background-color: #ff6b00;
+    border: none;
+    color: white;
+}
+
+.arrow {
+    width: 40px !important;
+    height: 40px !important;
+    cursor: pointer;
+    position: absolute !important;
+    top: 50% !important;
+    transform: translateY(-50%) !important;
+    z-index: 100 !important;
+  }
+  
+  .next-arrow {
+    right: 10px !important;
+  }
+  
+  .prev-arrow {
+    left: 10px !important;
+  }
+
+  

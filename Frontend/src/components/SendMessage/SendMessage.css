@@ -1,0 +1,122 @@
+/* Centering the form */
+.msg-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 40px 10%;
+    background: #f9f9f9;
+}
+
+/* Form box */
+.msg-box {
+    width: 100%;
+    max-width: 500px;
+    padding: 30px;
+    background-color: white;
+    border-radius: 12px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+    text-align: center;
+    transition: transform 0.3s ease-in-out;
+}
+
+/* Hover effect */
+.msg-box:hover {
+    transform: scale(1.02);
+}
+
+/* Heading */
+.msg-box h2 {
+    font-size: 28px;
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 20px;
+}
+
+/* Form layout */
+.msg-form {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+/* Input fields */
+.msg-form input,
+.msg-form textarea {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    font-size: 16px;
+    outline: none;
+    transition: border-color 0.3s ease-in-out;
+}
+
+/* Input focus effect */
+.msg-form input:focus,
+.msg-form textarea:focus {
+    border-color: #ff6b00;
+}
+
+/* Textarea styling */
+.msg-form textarea {
+    min-height: 120px;
+    resize: none;
+}
+
+/* Submit Button */
+.msg-form button {
+    background-color: #ff6b00;
+    color: white;
+    font-size: 18px;
+    font-weight: 600;
+    padding: 12px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background-color 0.3s ease-in-out, transform 0.2s ease-in-out;
+}
+
+/* Button Hover */
+.msg-form button:hover {
+    background-color: #e65a00;
+    transform: scale(1.05);
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .msg-box {
+        max-width: 90%;
+        padding: 24px;
+    }
+
+    .msg-box h2 {
+        font-size: 24px;
+    }
+
+    .msg-form input,
+    .msg-form textarea {
+        font-size: 14px;
+    }
+
+    .msg-form button {
+        font-size: 16px;
+    }
+}
+
+@media (max-width: 480px) {
+    .msg-container {
+        padding: 20px 5%;
+    }
+
+    .msg-box {
+        padding: 20px;
+    }
+
+    .msg-box h2 {
+        font-size: 22px;
+    }
+
+    .msg-form button {
+        font-size: 14px;
+    }
+}
