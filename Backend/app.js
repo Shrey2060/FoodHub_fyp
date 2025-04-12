@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
+const path = require('path');
 
 const app = express();
 
@@ -18,7 +19,7 @@ const foodRoutes = require('./routes/foodRoutes');
 const allergyRoutes = require('./routes/allergyRoutes');
 const rewardRoutes = require('./routes/rewardRoutes');
 const productRoutes = require('./routes/productRoutes');
-const orderRoutes = require('./routes/orders');
+const orderRoutes = require(path.join(__dirname, 'routes', 'orderRoutes'));
 const searchRoutes = require('./routes/searchRoutes');
 
 // Admin Routes
@@ -36,12 +37,11 @@ app.use('/api/food', foodRoutes);
 app.use('/api/allergies', allergyRoutes);
 app.use('/api/rewards', rewardRoutes);
 app.use('/api/products', productRoutes);
-app.use('/api/orders', orderRoutes);
+app.use('/api/orders', orderRoutes);  // This will handle /api/orders/create, /api/orders/history, etc.
 app.use('/api', searchRoutes); // general search route
 
 // Admin APIs
 app.use('/api/admin', adminRoutes); // base admin
-app.use('/api/admin/products', adminProductRoutes);
 app.use('/api/admin/orders', adminOrderRoutes);
 app.use('/api/admin/users', adminUserRoutes);
 

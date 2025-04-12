@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import axios from "axios";
+import axiosInstance from "../utils/axiosConfig";
 import "./Login.css";
 
 const Login = () => {
@@ -45,18 +45,19 @@ const Login = () => {
     setIsLoading(true);
 
     try {
-      const response = await axios.post("http://localhost:5000/api/auth/login", formData);
+      const response = await axiosInstance.post("/auth/login", formData);
 
       if (response.data.success) {
-        const { token, user } = response.data;
+        const { accessToken, user } = response.data;
 
-        // Save data to session storage
-        sessionStorage.setItem("authToken", token);
+        // Save data to sessionStorage
+        sessionStorage.setItem("authToken", accessToken);
         sessionStorage.setItem("userRole", user.role);
         sessionStorage.setItem("userId", user.id);
         sessionStorage.setItem("userName", user.name);
 
-        console.log("✅ Token saved:", token); // For debugging
+        // Set default axios headers for all future requests
+        axiosInstance.defaults.headers.common['Authorization'] = `Bearer ${accessToken}`;
 
         setMessage("Login successful!");
         setShowSuccessModal(true);

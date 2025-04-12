@@ -1,315 +1,225 @@
-const express = require("express");
+const express = require('express');
 const router = express.Router();
-const db = require("../config/db");
-const authenticateToken = require("../middleware/authMiddleware");
+const pool = require('../config/db');
+const authenticateToken = require('../middleware/authenticateToken');
 
-// Get cart items for the logged-in user
-router.get("/", authenticateToken, (req, res) => {
-    const userId = req.user.id;
+// Get cart items for the current user
+router.get('/', authenticateToken, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        console.log('Fetching cart items for user:', userId);
 
-    const query = `
-        SELECT 
-            c.id AS cart_item_id, 
-            c.quantity, 
-            c.name AS product_name, 
-            c.description, 
-            c.price,
-            c.discount_percentage,
-            c.final_price, 
-            c.image_url,
-            c.is_bundle,
-            CASE 
-                WHEN c.is_bundle = 1 THEN (
-                    SELECT JSON_ARRAYAGG(
-                        JSON_OBJECT(
-                            'product_id', bi.product_id,
-                            'name', p.name,
-                            'quantity', bi.quantity
-                        )
-                    )
-                    FROM cart_bundle_items bi
-                    JOIN products p ON bi.product_id = p.id
-                    WHERE bi.cart_item_id = c.id
-                )
-                ELSE NULL
-            END as bundle_items
-        FROM cart c 
-        WHERE c.user_id = ?`;
-
-    db.query(query, [userId], (err, results) => {
-        if (err) {
-            console.error("❌ Error fetching cart items:", err.message);
-            return res.status(500).json({
-                success: false,
-                message: "Database error while fetching cart items.",
-            });
-        }
-
-        res.status(200).json({ success: true, cartItems: results });
-    });
-});
-
-// Add a bundle to cart
-router.post("/add-bundle", authenticateToken, (req, res) => {
-    const userId = req.user.id;
-    const { bundleId, name, price, discount_percentage, items, final_price } = req.body;
-
-    if (!bundleId || !name || !price || !items) {
-        return res.status(400).json({
-            success: false,
-            message: "Bundle details are required.",
-        });
-    }
-
-    // Start transaction
-    db.beginTransaction(err => {
-        if (err) {
-            return res.status(500).json({
-                success: false,
-                message: "Transaction error.",
-            });
-        }
-
-        // Insert into cart
-        const insertCartQuery = `
-            INSERT INTO cart (user_id, item_id, name, description, price, discount_percentage, final_price, image_url, quantity, is_bundle) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 1)`;
-
-        db.query(
-            insertCartQuery,
-            [userId, bundleId, name, "Bundle", price, discount_percentage, final_price, null],
-            (err, result) => {
-                if (err) {
-                    return db.rollback(() => {
-                        res.status(500).json({
-                            success: false,
-                            message: "Error adding bundle to cart.",
-                        });
-                    });
-                }
-
-                const cartItemId = result.insertId;
-
-                // Insert bundle items
-                const insertItemsPromises = items.map(item => {
-                    return new Promise((resolve, reject) => {
-                        db.query(
-                            `INSERT INTO cart_bundle_items (cart_item_id, product_id, quantity) VALUES (?, ?, ?)`,
-                            [cartItemId, item.product_id, item.quantity],
-                            (err) => {
-                                if (err) reject(err);
-                                else resolve();
-                            }
-                        );
-                    });
-                });
-
-                Promise.all(insertItemsPromises)
-                    .then(() => {
-                        db.commit(err => {
-                            if (err) {
-                                return db.rollback(() => {
-                                    res.status(500).json({
-                                        success: false,
-                                        message: "Error committing transaction.",
-                                    });
-                                });
-                            }
-                            res.status(201).json({
-                                success: true,
-                                message: "Bundle added to cart successfully.",
-                            });
-                        });
-                    })
-                    .catch(err => {
-                        db.rollback(() => {
-                            res.status(500).json({
-                                success: false,
-                                message: "Error adding bundle items.",
-                            });
-                        });
-                    });
-            }
+        const [cartItems] = await pool.query(
+            `SELECT cart_item_id, product_id, name, description, price, quantity, image_url 
+             FROM Cart 
+             WHERE user_id = ?`,
+            [userId]
         );
-    });
-});
 
-// Add regular item to cart
-router.post("/", authenticateToken, (req, res) => {
-    const userId = req.user.id;
-    const { product_id, quantity } = req.body;
-
-    if (!product_id || !quantity || quantity < 1) {
-        return res.status(400).json({
+        res.json({
+            success: true,
+            cartItems: cartItems
+        });
+    } catch (error) {
+        console.error('Error fetching cart items:', error);
+        res.status(500).json({
             success: false,
-            message: "Product ID and a valid quantity are required.",
+            message: 'Failed to fetch cart items'
         });
     }
+});
 
-    const fetchProductQuery = `
-    SELECT id, name, description, price, image_url 
-    FROM products 
-    WHERE id = ?`;
+// Add item to cart
+router.post('/', authenticateToken, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { product_id, quantity, price, name, description, image_url } = req.body;
 
-    db.query(fetchProductQuery, [product_id], (err, productResults) => {
-        if (err) {
-            console.error("❌ Error fetching product details:", err.message);
-            return res.status(500).json({
+        // Validate required fields
+        if (!product_id || !price || !name) {
+            console.error('Missing required fields:', { product_id, price, name });
+            return res.status(400).json({
                 success: false,
-                message: "Database error while fetching product details.",
+                message: 'Missing required fields: product_id, price, or name'
             });
         }
 
-        if (productResults.length === 0) {
+        // Log input validation
+        console.log('Input validation:', {
+            product_id: typeof product_id,
+            price: typeof price,
+            quantity: typeof quantity,
+            userId: typeof userId
+        });
+
+        // Check if the item already exists in the cart
+        const [existingItems] = await pool.query(
+            'SELECT cart_item_id, quantity FROM Cart WHERE user_id = ? AND product_id = ?',
+            [userId, product_id]
+        );
+
+        console.log('Existing items check:', {
+            found: existingItems.length > 0,
+            existingItems
+        });
+
+        let cartItemId;
+        const finalQuantity = quantity || 1;
+        const finalPrice = parseFloat(price);
+        const finalProductId = parseInt(product_id);
+
+        if (existingItems.length > 0) {
+            // Update quantity if item exists
+            const newQuantity = existingItems[0].quantity + finalQuantity;
+            console.log('Updating existing item:', {
+                cartItemId: existingItems[0].cart_item_id,
+                newQuantity
+            });
+
+            await pool.query(
+                'UPDATE Cart SET quantity = ? WHERE cart_item_id = ?',
+                [newQuantity, existingItems[0].cart_item_id]
+            );
+            cartItemId = existingItems[0].cart_item_id;
+        } else {
+            // Insert new item if it doesn't exist
+            console.log('Inserting new item:', {
+                userId,
+                finalProductId,
+                name,
+                finalPrice,
+                finalQuantity
+            });
+
+            const [result] = await pool.query(
+                `INSERT INTO Cart (user_id, product_id, name, description, price, quantity, image_url) 
+                 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                [userId, finalProductId, name, description || '', finalPrice, finalQuantity, image_url || '']
+            );
+            cartItemId = result.insertId;
+        }
+
+        console.log('Operation successful:', {
+            cartItemId,
+            action: existingItems.length > 0 ? 'updated' : 'inserted'
+        });
+
+        res.json({
+            success: true,
+            message: 'Item added to cart successfully',
+            cartItemId: cartItemId
+        });
+    } catch (error) {
+        console.error('Detailed error in add to cart:', {
+            error: error.message,
+            stack: error.stack,
+            sqlMessage: error.sqlMessage,
+            sqlState: error.sqlState
+        });
+        
+        res.status(500).json({
+            success: false,
+            message: 'Failed to add item to cart',
+            error: error.message,
+            sqlError: error.sqlMessage
+        });
+    }
+});
+
+// Update cart item quantity
+router.put('/:cartItemId', authenticateToken, async (req, res) => {
+    try {
+        const { cartItemId } = req.params;
+        const { quantity } = req.body;
+        const userId = req.user.id;
+
+        // Verify the cart item belongs to the user
+        const [cartItem] = await pool.query(
+            'SELECT cart_item_id FROM Cart WHERE cart_item_id = ? AND user_id = ?',
+            [cartItemId, userId]
+        );
+
+        if (cartItem.length === 0) {
             return res.status(404).json({
                 success: false,
-                message: "Product not found.",
+                message: 'Cart item not found'
             });
         }
 
-        const product = productResults[0];
-
-        const insertOrUpdateCartQuery = `
-            INSERT INTO cart (user_id, item_id, name, description, price, image_url, quantity, is_bundle) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, 0) 
-            ON DUPLICATE KEY UPDATE quantity = quantity + VALUES(quantity)`;
-
-        db.query(
-            insertOrUpdateCartQuery,
-            [userId, product.id, product.name, product.description, product.price, product.image_url, quantity],
-            (err) => {
-                if (err) {
-                    console.error("❌ Error adding/updating cart:", err.message);
-                    return res.status(500).json({
-                        success: false,
-                        message: "Database error while adding/updating cart.",
-                    });
-                }
-
-                res.status(201).json({
-                    success: true,
-                    message: "Item added to cart successfully.",
-                });
-            }
+        await pool.query(
+            'UPDATE Cart SET quantity = ? WHERE cart_item_id = ?',
+            [quantity, cartItemId]
         );
-    });
+
+        res.json({
+            success: true,
+            message: 'Cart item updated successfully'
+        });
+    } catch (error) {
+        console.error('Error updating cart item:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to update cart item'
+        });
+    }
 });
 
-// Remove an item from cart
-router.delete("/:cart_item_id", authenticateToken, (req, res) => {
-    const { cart_item_id } = req.params;
+// Remove item from cart
+router.delete('/:cartItemId', authenticateToken, async (req, res) => {
+    try {
+        const { cartItemId } = req.params;
+        const userId = req.user.id;
 
-    db.beginTransaction(err => {
-        if (err) {
-            return res.status(500).json({
+        // Verify the cart item belongs to the user
+        const [cartItem] = await pool.query(
+            'SELECT cart_item_id FROM Cart WHERE cart_item_id = ? AND user_id = ?',
+            [cartItemId, userId]
+        );
+
+        if (cartItem.length === 0) {
+            return res.status(404).json({
                 success: false,
-                message: "Transaction error.",
+                message: 'Cart item not found'
             });
         }
 
-        // First delete bundle items if any
-        db.query("DELETE FROM cart_bundle_items WHERE cart_item_id = ?", [cart_item_id], (err) => {
-            if (err) {
-                return db.rollback(() => {
-                    res.status(500).json({
-                        success: false,
-                        message: "Error removing bundle items.",
-                    });
-                });
-            }
+        await pool.query(
+            'DELETE FROM Cart WHERE cart_item_id = ?',
+            [cartItemId]
+        );
 
-            // Then delete the cart item
-            db.query("DELETE FROM cart WHERE id = ?", [cart_item_id], (err) => {
-                if (err) {
-                    return db.rollback(() => {
-                        res.status(500).json({
-                            success: false,
-                            message: "Error removing cart item.",
-                        });
-                    });
-                }
-
-                db.commit(err => {
-                    if (err) {
-                        return db.rollback(() => {
-                            res.status(500).json({
-                                success: false,
-                                message: "Error committing transaction.",
-                            });
-                        });
-                    }
-
-                    res.status(200).json({
-                        success: true,
-                        message: "Item removed from cart successfully.",
-                    });
-                });
-            });
+        res.json({
+            success: true,
+            message: 'Item removed from cart successfully'
         });
-    });
+    } catch (error) {
+        console.error('Error removing cart item:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to remove item from cart'
+        });
+    }
 });
 
-// Clear cart
-router.delete("/", authenticateToken, (req, res) => {
-    const userId = req.user.id;
+// Clear entire cart
+router.delete('/', authenticateToken, async (req, res) => {
+    try {
+        const userId = req.user.id;
 
-    if (req.query.clear === "true") {
-        db.beginTransaction(err => {
-            if (err) {
-                return res.status(500).json({
-                    success: false,
-                    message: "Transaction error.",
-                });
-            }
+        await pool.query(
+            'DELETE FROM Cart WHERE user_id = ?',
+            [userId]
+        );
 
-            // First delete all bundle items
-            db.query(
-                "DELETE bi FROM cart_bundle_items bi JOIN cart c ON bi.cart_item_id = c.id WHERE c.user_id = ?",
-                [userId],
-                (err) => {
-                    if (err) {
-                        return db.rollback(() => {
-                            res.status(500).json({
-                                success: false,
-                                message: "Error clearing bundle items.",
-                            });
-                        });
-                    }
-
-                    // Then delete all cart items
-                    db.query("DELETE FROM cart WHERE user_id = ?", [userId], (err) => {
-                        if (err) {
-                            return db.rollback(() => {
-                                res.status(500).json({
-                                    success: false,
-                                    message: "Error clearing cart.",
-                                });
-                            });
-                        }
-
-                        db.commit(err => {
-                            if (err) {
-                                return db.rollback(() => {
-                                    res.status(500).json({
-                                        success: false,
-                                        message: "Error committing transaction.",
-                                    });
-                                });
-                            }
-
-                            res.status(200).json({
-                                success: true,
-                                message: "Cart cleared successfully.",
-                            });
-                        });
-                    });
-                }
-            );
+        res.json({
+            success: true,
+            message: 'Cart cleared successfully'
         });
-    } else {
-        return res.status(400).json({
+    } catch (error) {
+        console.error('Error clearing cart:', error);
+        res.status(500).json({
             success: false,
-            message: "Invalid request. Use ?clear=true to clear the cart.",
+            message: 'Failed to clear cart'
         });
     }
 });

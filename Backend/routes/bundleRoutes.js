@@ -1,96 +1,210 @@
 const express = require('express');
 const router = express.Router();
+const { authenticateToken } = require('../middleware/auth');
 const mysql = require('mysql2/promise');
-const auth = require('../middleware/auth');
+const dbConfig = require('../config/database');
 
-const pool = mysql.createPool({
-    host: 'localhost',
-    user: 'root',
-    password: 'your_password',
-    database: 'foodhub'
-});
+// Create connection pool
+const pool = mysql.createPool(dbConfig);
 
-// Get all bundles
+// Experience types and their associated content
+const EXPERIENCE_TYPES = {
+    TRIVIA: 'trivia',
+    RECIPE_CHALLENGE: 'recipe_challenge',
+    CULTURAL_PLAYLIST: 'cultural_playlist'
+};
+
+// Get all bundles with experiences
 router.get('/', async (req, res) => {
     try {
         const [bundles] = await pool.query(`
-            SELECT b.*, GROUP_CONCAT(p.name) as items
-            FROM food_bundles b
-            LEFT JOIN bundle_items bi ON b.id = bi.bundle_id
-            LEFT JOIN products p ON bi.product_id = p.id
-            GROUP BY b.id
+            SELECT * FROM food_bundles
         `);
-        res.json({ success: true, bundles });
+
+        // Add experience data to each bundle
+        const bundlesWithExperiences = bundles.map(bundle => ({
+            ...bundle,
+            experiences: {
+                trivia: {
+                    title: 'Food Trivia Challenge',
+                    questions: [
+                        { 
+                            question: `What cuisine is ${bundle.name} inspired by?`,
+                            points: 10,
+                            options: ['Italian', 'Mexican', 'Indian', 'Chinese']
+                        },
+                        { 
+                            question: 'What are the key ingredients in this dish?',
+                            points: 15,
+                            options: ['Rice', 'Pasta', 'Noodles', 'Bread']
+                        }
+                    ]
+                },
+                recipe_challenge: {
+                    title: `${bundle.name} Cooking Challenge`,
+                    description: `Learn to make elements of ${bundle.name} at home!`,
+                    difficulty: 'Medium',
+                    estimatedTime: '30 mins',
+                    steps: [
+                        'Gather your ingredients',
+                        'Follow along with our video guide',
+                        'Share your creation!'
+                    ],
+                    tips: ['Prep all ingredients before starting', 'Take photos of your progress']
+                },
+                cultural_playlist: {
+                    title: `${bundle.name} Cultural Experience`,
+                    description: 'Enjoy your meal with themed music',
+                    genres: ['Traditional', 'Contemporary', 'Fusion'],
+                    duration: '45 mins',
+                    moodTags: ['Upbeat', 'Cultural', 'Relaxing']
+                }
+            }
+        }));
+
+        res.json({ success: true, bundles: bundlesWithExperiences });
     } catch (error) {
+        console.error('Error fetching bundles:', error);
         res.status(500).json({ success: false, message: 'Error fetching bundles' });
     }
 });
 
-// Get bundle details
+// Get bundle details with experiences
 router.get('/:id', async (req, res) => {
     try {
-        const [bundle] = await pool.query(`
-            SELECT b.*, 
-                   JSON_ARRAYAGG(
-                       JSON_OBJECT(
-                           'product_id', p.id,
-                           'name', p.name,
-                           'quantity', bi.quantity
-                       )
-                   ) as items
-            FROM food_bundles b
-            LEFT JOIN bundle_items bi ON b.id = bi.bundle_id
-            LEFT JOIN products p ON bi.product_id = p.id
-            WHERE b.id = ?
-            GROUP BY b.id
-        `, [req.params.id]);
+        const [bundle] = await pool.query('SELECT * FROM food_bundles WHERE id = ?', [req.params.id]);
+
+        if (!bundle[0]) {
+            return res.status(404).json({ success: false, message: 'Bundle not found' });
+        }
+
+        // Add experience data
+        const bundleWithExperiences = {
+            ...bundle[0],
+            experiences: {
+                trivia: {
+                    title: 'Food Trivia Challenge',
+                    questions: [
+                        { 
+                            question: `What cuisine is ${bundle[0].name} inspired by?`,
+                            points: 10,
+                            options: ['Italian', 'Mexican', 'Indian', 'Chinese']
+                        },
+                        {
+                            question: 'What are the key ingredients in this dish?',
+                            points: 15,
+                            options: ['Rice', 'Pasta', 'Noodles', 'Bread']
+                        }
+                    ],
+                    totalPoints: 25
+                },
+                recipe_challenge: {
+                    title: `${bundle[0].name} Cooking Challenge`,
+                    description: `Learn to make elements of ${bundle[0].name} at home!`,
+                    difficulty: 'Medium',
+                    estimatedTime: '30 mins',
+                    steps: [
+                        'Gather your ingredients',
+                        'Follow along with our video guide',
+                        'Share your creation!'
+                    ],
+                    tips: ['Prep all ingredients before starting', 'Take photos of your progress']
+                },
+                cultural_playlist: {
+                    title: `${bundle[0].name} Cultural Experience`,
+                    description: 'Enjoy your meal with themed music',
+                    genres: ['Traditional', 'Contemporary', 'Fusion'],
+                    duration: '45 mins',
+                    moodTags: ['Upbeat', 'Cultural', 'Relaxing']
+                }
+            }
+        };
         
-        res.json({ success: true, bundle: bundle[0] });
+        res.json({ success: true, bundle: bundleWithExperiences });
     } catch (error) {
+        console.error('Error fetching bundle details:', error);
         res.status(500).json({ success: false, message: 'Error fetching bundle details' });
     }
 });
 
-// Add bundle to cart
-router.post('/add-bundle', auth, async (req, res) => {
+// Start experience for a bundle
+router.post('/:id/start-experience', authenticateToken, async (req, res) => {
     try {
-        const { bundleId, name, price, discount_percentage, items, final_price } = req.body;
-        const userId = req.user.id;
-
-        // First, create cart entry if it doesn't exist
-        await pool.query(`
-            INSERT INTO carts (user_id, created_at)
-            SELECT ?, NOW()
-            WHERE NOT EXISTS (
-                SELECT 1 FROM carts WHERE user_id = ?
-            )
-        `, [userId, userId]);
-
-        // Get cart id
-        const [cart] = await pool.query('SELECT id FROM carts WHERE user_id = ?', [userId]);
-        const cartId = cart[0].id;
-
-        // Add bundle to cart_items
-        await pool.query(`
-            INSERT INTO cart_items (cart_id, bundle_id, quantity, price, discount_percentage, final_price)
-            VALUES (?, ?, 1, ?, ?, ?)
-        `, [cartId, bundleId, price, discount_percentage, final_price]);
-
-        // Add individual items from bundle to cart_bundle_items
-        const [cartItem] = await pool.query('SELECT id FROM cart_items WHERE cart_id = ? AND bundle_id = ? ORDER BY id DESC LIMIT 1', 
-            [cartId, bundleId]);
+        const { experienceType } = req.body;
+        const bundleId = req.params.id;
         
-        for (const item of items) {
-            await pool.query(`
-                INSERT INTO cart_bundle_items (cart_item_id, product_id, quantity)
-                VALUES (?, ?, ?)
-            `, [cartItem[0].id, item.product_id, item.quantity]);
+        // Validate experience type
+        if (!Object.values(EXPERIENCE_TYPES).includes(experienceType)) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Invalid experience type' 
+            });
         }
 
-        res.json({ success: true, message: 'Bundle added to cart successfully' });
+        const [bundle] = await pool.query('SELECT * FROM food_bundles WHERE id = ?', [bundleId]);
+        
+        if (!bundle[0]) {
+            return res.status(404).json({ 
+                success: false, 
+                message: 'Bundle not found' 
+            });
+        }
+
+        // Record experience start in user_activities table
+        await pool.query(`
+            INSERT INTO user_activities (user_id, bundle_id, activity_type, created_at)
+            VALUES (?, ?, ?, NOW())
+        `, [req.user.id, bundleId, `started_${experienceType}`]);
+
+        // Return experience data based on type
+        const experienceData = {
+            trivia: {
+                title: 'Food Trivia Challenge',
+                questions: [
+                    { 
+                        question: `What cuisine is ${bundle[0].name} inspired by?`,
+                        points: 10,
+                        options: ['Italian', 'Mexican', 'Indian', 'Chinese']
+                    },
+                    {
+                        question: 'What are the key ingredients in this dish?',
+                        points: 15,
+                        options: ['Rice', 'Pasta', 'Noodles', 'Bread']
+                    }
+                ]
+            },
+            recipe_challenge: {
+                title: `${bundle[0].name} Cooking Challenge`,
+                description: `Learn to make elements of ${bundle[0].name} at home!`,
+                difficulty: 'Medium',
+                estimatedTime: '30 mins',
+                steps: [
+                    'Gather your ingredients',
+                    'Follow along with our video guide',
+                    'Share your creation!'
+                ],
+                tips: ['Prep all ingredients before starting', 'Take photos of your progress']
+            },
+            cultural_playlist: {
+                title: `${bundle[0].name} Cultural Experience`,
+                description: 'Enjoy your meal with themed music',
+                genres: ['Traditional', 'Contemporary', 'Fusion'],
+                duration: '45 mins',
+                moodTags: ['Upbeat', 'Cultural', 'Relaxing']
+            }
+        };
+
+        res.json({ 
+            success: true, 
+            message: 'Experience started successfully',
+            experienceData: experienceData[experienceType]
+        });
     } catch (error) {
-        console.error('Error adding bundle to cart:', error);
-        res.status(500).json({ success: false, message: 'Failed to add bundle to cart' });
+        console.error('Error starting experience:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error starting experience' 
+        });
     }
 });
 

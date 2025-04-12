@@ -1,50 +1,20 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import axios from "axios";
-import { FaSearch } from "react-icons/fa";
+import { getAllProducts } from "../../data/products";
 import "./SearchBar.css";
 
 const SearchBar = () => {
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
   const [suggestions, setSuggestions] = useState([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(false);
   const navigate = useNavigate();
   const searchRef = useRef(null);
+  const allProducts = getAllProducts();
 
-  const handleSearch = async (query) => {
-    setSearchQuery(query);
-    
-    if (query.length >= 2) {
-      setIsLoading(true);
-      try {
-        console.log('Sending search request for:', query); // Debug log
-        const response = await axios.get(`http://localhost:5000/api/search?query=${query}`);
-        console.log('Search response:', response.data); // Debug log
-        
-        if (response.data.success) {
-          setSuggestions(response.data.items);
-        }
-      } catch (error) {
-        console.error("Search error:", error);
-      } finally {
-        setIsLoading(false);
-      }
-    } else {
-      setSuggestions([]);
-    }
-  };
-
-  const handleSelectItem = (item) => {
-    setSearchQuery(item.name);
-    setSuggestions([]);
-    navigate(`/food-details/${item.id}`);
-  };
-
-  // Close suggestions when clicking outside
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (searchRef.current && !searchRef.current.contains(event.target)) {
-        setSuggestions([]);
+        setShowSuggestions(false);
       }
     };
 
@@ -52,45 +22,84 @@ const SearchBar = () => {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  useEffect(() => {
+    if (!searchTerm.trim()) {
+      setSuggestions([]);
+      return;
+    }
+
+    const searchLower = searchTerm.toLowerCase();
+    const matchingProducts = allProducts.filter(product => 
+      product.name.toLowerCase().includes(searchLower) ||
+      product.category.toLowerCase().includes(searchLower) ||
+      product.description.toLowerCase().includes(searchLower)
+    ).map(product => ({
+      type: "product",
+      ...product
+    }));
+
+    setSuggestions(matchingProducts);
+  }, [searchTerm]);
+
+  const handleSearch = (term) => {
+    if (!term.trim()) return;
+    navigate(`/search?q=${encodeURIComponent(term)}`);
+    setShowSuggestions(false);
+    setSearchTerm('');
+  };
+
+  const handleKeyPress = (e) => {
+    if (e.key === 'Enter') {
+      handleSearch(searchTerm);
+    }
+  };
+
+  const handleSuggestionClick = (suggestion) => {
+    handleSearch(suggestion.name);
+  };
+
   return (
-    <div className="search-container" ref={searchRef}>
+    <div className="search-bar-container" ref={searchRef}>
       <div className="search-input-wrapper">
-        <FaSearch className="search-icon" />
         <input
           type="text"
-          value={searchQuery}
-          onChange={(e) => handleSearch(e.target.value)}
-          placeholder="Search by name, category, or keywords..."
+          value={searchTerm}
+          onChange={(e) => {
+            setSearchTerm(e.target.value);
+            setShowSuggestions(true);
+          }}
+          onKeyPress={handleKeyPress}
+          onFocus={() => setShowSuggestions(true)}
+          placeholder="Search for dishes or categories..."
           className="search-input"
         />
+        <button 
+          className="search-button"
+          onClick={() => handleSearch(searchTerm)}
+        >
+          Search
+        </button>
       </div>
 
-      {suggestions.length > 0 && (
-        <div className="suggestions-dropdown">
-          {isLoading ? (
-            <div className="loading">Searching...</div>
-          ) : (
-            <ul>
-              {suggestions.map((item) => (
-                <li
-                  key={item.id}
-                  onClick={() => handleSelectItem(item)}
+      {showSuggestions && (
+        <div className="suggestions-container">
+          {suggestions.length > 0 ? (
+            <>
+              {suggestions.map((suggestion, index) => (
+                <div
+                  key={index}
                   className="suggestion-item"
+                  onClick={() => handleSuggestionClick(suggestion)}
                 >
-                  <img 
-                    src={item.image_url} 
-                    alt={item.name} 
-                    className="suggestion-image"
-                    onError={(e) => e.target.src = '/images/default-food.jpg'}
-                  />
-                  <div className="suggestion-details">
-                    <span className="suggestion-name">{item.name}</span>
-                    <span className="suggestion-price">${item.price}</span>
-                  </div>
-                </li>
+                  <span className="suggestion-icon">🍽️</span>
+                  <span className="suggestion-text">{suggestion.name}</span>
+                  <span className="suggestion-category">{suggestion.category}</span>
+                </div>
               ))}
-            </ul>
-          )}
+            </>
+          ) : searchTerm ? (
+            <div className="no-suggestions">No results found</div>
+          ) : null}
         </div>
       )}
     </div>

@@ -4,38 +4,63 @@ const db = require('../config/db');
 
 router.get('/search', async (req, res) => {
   try {
-    const { query } = req.query;
-    console.log('Search query received:', query); // Debug log
+    const { query, type = 'all' } = req.query;
+    console.log('Search query received:', query, 'Type:', type); // Debug log
     
     if (!query || query.length < 2) {
       return res.json({ success: true, items: [] });
     }
 
-    const searchQuery = `
+    let searchQuery = `
       SELECT 
         id,
         name,
         description,
         price,
         image_url,
-        category
+        category,
+        keywords
       FROM menu_items
       WHERE 
-        LOWER(name) LIKE LOWER(?) OR
-        LOWER(description) LIKE LOWER(?) OR
-        LOWER(category) LIKE LOWER(?) OR
-        LOWER(keywords) LIKE LOWER(?)
-      LIMIT 10
     `;
 
     const searchPattern = `%${query}%`;
-    const [results] = await db.query(searchQuery, [searchPattern, searchPattern, searchPattern, searchPattern]);
+    let queryParams = [];
+
+    switch (type) {
+      case 'name':
+        searchQuery += `LOWER(name) LIKE LOWER(?)`;
+        queryParams.push(searchPattern);
+        break;
+      case 'keywords':
+        searchQuery += `LOWER(keywords) LIKE LOWER(?)`;
+        queryParams.push(searchPattern);
+        break;
+      default: // 'all'
+        searchQuery += `
+          LOWER(name) LIKE LOWER(?) OR
+          LOWER(description) LIKE LOWER(?) OR
+          LOWER(category) LIKE LOWER(?) OR
+          LOWER(keywords) LIKE LOWER(?)
+        `;
+        queryParams = [searchPattern, searchPattern, searchPattern, searchPattern];
+    }
+
+    searchQuery += ` LIMIT 10`;
+
+    const [results] = await db.query(searchQuery, queryParams);
     
     console.log('Search results:', results); // Debug log
 
+    // Process keywords for better display
+    const processedResults = results.map(item => ({
+      ...item,
+      keywords: item.keywords ? item.keywords.split(',').map(k => k.trim()).join(', ') : ''
+    }));
+
     res.json({
       success: true,
-      items: results
+      items: processedResults
     });
 
   } catch (error) {

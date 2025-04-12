@@ -9,14 +9,14 @@ const LOGIN_REWARD_POINTS = 10;
 // ✅ Get user's reward points
 router.get("/points", auth, async (req, res) => {
     try {
-        const [rewardCheck] = await db.promise().query(
+        const [rewardCheck] = await db.query(
             "SELECT points_balance, total_points_earned, login_reward_given FROM user_rewards WHERE user_id = ?",
             [req.user.id]
         );
 
         if (rewardCheck.length === 0) {
             // Create new rewards record if it doesn't exist
-            await db.promise().query(
+            await db.query(
                 "INSERT INTO user_rewards (user_id, points_balance, total_points_earned, login_reward_given) VALUES (?, 0, 0, false)",
                 [req.user.id]
             );
@@ -32,37 +32,35 @@ router.get("/points", auth, async (req, res) => {
 
 router.get("/redeem-points", auth, async (req, res) => {
     try {
-        const [rows] = await db.promise().query(
+        const [rows] = await db.query(
             "SELECT points_balance FROM reward_points WHERE user_id = ?",
             [req.user.id]
-          );
+        );
           
-      console.log("✅ Fetched reward rows:", rows); // 👈 ADD THIS
+        console.log("✅ Fetched reward rows:", rows);
   
-      if (rows.length === 0) {
-        return res.status(404).json({
-          success: false,
-          message: "Reward points not found for this user.",
+        if (rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: "Reward points not found for this user.",
+            });
+        }
+  
+        res.json({
+            success: true,
+            data: {
+                redeemable_points: rows[0].points_balance,
+            },
         });
-      }
-  
-      res.json({
-        success: true,
-        data: {
-          redeemable_points: rows[0].points_balance,
-        },
-      });
     } catch (error) {
-      console.error("❌ Error fetching redeemable points:", error);
-      res.status(500).json({ success: false, message: "Error fetching redeemable points" });
+        console.error("❌ Error fetching redeemable points:", error);
+        res.status(500).json({ success: false, message: "Error fetching redeemable points" });
     }
-  });
-  
-
+});
 
 // ✅ Grant 10 reward points on first login (Once per Email)
 router.post("/login-reward", auth, async (req, res) => {
-    const connection = await db.promise().getConnection();
+    const connection = await db.getConnection();
     try {
         await connection.beginTransaction();
 
@@ -113,7 +111,7 @@ router.post("/login-reward", auth, async (req, res) => {
 // ✅ Get reward transaction history
 router.get("/history", auth, async (req, res) => {
     try {
-        const [transactions] = await db.promise().query(
+        const [transactions] = await db.query(
             `SELECT id, transaction_type, points_earned, points_redeemed, 
              transaction_date, description 
              FROM reward_transactions 
@@ -132,7 +130,7 @@ router.get("/history", auth, async (req, res) => {
 
 // ✅ Redeem points
 router.post("/redeem", auth, async (req, res) => {
-    const connection = await db.promise().getConnection();
+    const connection = await db.getConnection();
     try {
         await connection.beginTransaction();
 
@@ -183,7 +181,7 @@ router.post("/redeem", auth, async (req, res) => {
 
 // ✅ Add points (e.g., from order processing)
 router.post("/add-points", auth, async (req, res) => {
-    const connection = await db.promise().getConnection();
+    const connection = await db.getConnection();
     try {
         await connection.beginTransaction();
 

@@ -16,6 +16,12 @@ const adminRoutes = require("./routes/adminRoutes"); // ✅ Admin routes
 const searchRoutes = require("./routes/searchRoutes");
 const rewardRoutes = require("./routes/rewardRoutes");
 const khaltiRoutes = require("./routes/khaltiRoutes");
+const orderRoutes = require("./routes/orderRoutes"); // ✅ Order routes
+const productRoutes = require("./routes/productRoutes");
+const subscriptionRoutes = require("./routes/subscriptionRoutes");
+const preOrderRoutes = require('./routes/PreOrderRoutes');
+const chatbotRoutes = require('./routes/chatbot');
+const bundleRoutes = require('./routes/bundleRoutes');
 
 // Load environment variables
 dotenv.config();
@@ -35,16 +41,18 @@ app.use(express.json()); // Parse JSON request bodies
 app.use(helmet()); // Secure HTTP headers
 app.use(morgan("dev")); // Log HTTP requests
 app.use("/api", searchRoutes);
+app.use("/api/bundles", bundleRoutes);
 
 // ✅ Test database connection
-db.connect((err) => {
-    if (err) {
+db.getConnection()
+    .then(connection => {
+        console.log("✅ Connected to MySQL database.");
+        connection.release();
+    })
+    .catch(err => {
         console.error("❌ Database connection failed:", err.message);
         process.exit(1); // Exit if the database connection fails
-    } else {
-        console.log("✅ Connected to MySQL database.");
-    }
-});
+    });
 
 // ✅ Routes
 app.use("/api/auth", authRoutes);
@@ -55,6 +63,11 @@ app.use("/api/chat", chatRoutes); // ✅ Chat API route enabled
 app.use("/api/admin", adminRoutes); // ✅ Admin API route enabled
 app.use("/api/rewards", rewardRoutes); 
 app.use("/api/payment", khaltiRoutes);
+app.use("/api/orders", orderRoutes); // ✅ Order routes enabled
+app.use("/api/products", productRoutes);
+app.use("/api/subscriptions", subscriptionRoutes);
+app.use('/api/pre-orders', preOrderRoutes);
+app.use('/api/chatbot', chatbotRoutes);
 
 // ✅ Root endpoint (Optional)
 app.get("/", (req, res) => {

@@ -8,23 +8,36 @@ const router = express.Router();
 
 // Middleware to authenticate JWT token
 const authenticateToken = (req, res, next) => {
-  const token = req.headers["authorization"]?.split(" ")[1];
-  if (!token) {
+  const authHeader = req.headers['authorization'];
+  
+  if (!authHeader) {
     return res.status(401).json({ success: false, message: "Access denied. No token provided." });
   }
 
-  jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
-    if (err) {
-      return res.status(403).json({ success: false, message: "Invalid or expired token." });
-    }
-    req.user = user;
+  // Check if the token starts with 'Bearer '
+  if (!authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ success: false, message: "Invalid token format." });
+  }
+
+  const token = authHeader.split(' ')[1];
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    req.user = {
+      id: decoded.id,
+      name: decoded.name,
+      role: decoded.role
+    };
     next();
-  });
+  } catch (error) {
+    console.error("❌ Token verification error:", error.message);
+    return res.status(403).json({ success: false, message: "Invalid or expired token." });
+  }
 };
 
 // Middleware to check if user is admin
 const isAdmin = (req, res, next) => {
-  if (req.user.role !== 'admin') {
+  if (!req.user || req.user.role !== 'admin') {
     return res.status(403).json({ success: false, message: "Access denied. Admin privileges required." });
   }
   next();
@@ -40,49 +53,31 @@ router.post("/register", async (req, res) => {
 
   try {
     const checkQuery = "SELECT id FROM users WHERE email = ?";
-    db.query(checkQuery, [email], async (err, results) => {
-      if (err) {
-        console.error("❌ Error checking user existence:", err);
-        return res.status(500).json({ success: false, message: "Database error during user check." });
-      }
+    const [results] = await db.query(checkQuery, [email]);
 
-      if (results.length > 0) {
-        return res.status(400).json({ success: false, message: "Email is already registered." });
-      }
+    if (results.length > 0) {
+      return res.status(400).json({ success: false, message: "Email is already registered." });
+    }
 
-      const hashedPassword = await bcrypt.hash(password, 10);
+    const hashedPassword = await bcrypt.hash(password, 10);
 
-      const insertUserQuery = `
-        INSERT INTO users (name, email, password, phone_number, role, created_at)
-        VALUES (?, ?, ?, ?, 'user', NOW())
-      `;
-      db.query(insertUserQuery, [name, email, hashedPassword, phoneNumber], (err, result) => {
-        if (err) {
-          console.error("❌ Error inserting new user:", err);
-          return res.status(500).json({ success: false, message: "Failed to register user." });
-        }
+    const insertUserQuery = `
+      INSERT INTO users (name, email, password, phone_number, role, created_at)
+      VALUES (?, ?, ?, ?, 'user', NOW())
+    `;
+    const [result] = await db.query(insertUserQuery, [name, email, hashedPassword, phoneNumber]);
 
-        const userId = result.insertId;
+    const userId = result.insertId;
 
-        const rewardQuery = `
-          INSERT INTO reward_points (user_id, points_balance, total_points_earned)
-          VALUES (?, 10, 10)
-        `;
-        db.query(rewardQuery, [userId], (err) => {
-          if (err) {
-            console.error("❌ Error inserting reward points:", err.sqlMessage || err.message);
-            return res.status(500).json({
-              success: false,
-              message: "User registered but failed to assign reward points.",
-            });
-          }
+    const rewardQuery = `
+      INSERT INTO reward_points (user_id, points_balance, total_points_earned)
+      VALUES (?, 10, 10)
+    `;
+    await db.query(rewardQuery, [userId]);
 
-          res.status(201).json({
-            success: true,
-            message: "✅ User registered successfully with 10 reward points!",
-          });
-        });
-      });
+    res.status(201).json({
+      success: true,
+      message: "✅ User registered successfully with 10 reward points!",
     });
   } catch (error) {
     console.error("❌ Error during registration:", error);
@@ -90,7 +85,7 @@ router.post("/register", async (req, res) => {
   }
 });
 
-// Login Endpoint (UPDATED)
+// Login Endpoint
 router.post("/login", async (req, res) => {
   const { email, password } = req.body;
 
@@ -100,38 +95,39 @@ router.post("/login", async (req, res) => {
 
   try {
     const query = "SELECT * FROM users WHERE email = ?";
-    db.query(query, [email], async (err, results) => {
-      if (err) {
-        console.error("Error fetching user:", err);
-        return res.status(500).json({ success: false, message: "Database error." });
-      }
+    const [results] = await db.query(query, [email]);
 
-      if (results.length === 0) {
-        return res.status(401).json({ success: false, message: "Invalid email or password." });
-      }
+    if (results.length === 0) {
+      return res.status(401).json({ success: false, message: "Invalid email or password." });
+    }
 
-      const user = results[0];
-      const validPassword = await bcrypt.compare(password, user.password);
-      if (!validPassword) {
-        return res.status(401).json({ success: false, message: "Invalid email or password." });
-      }
+    const user = results[0];
+    const validPassword = await bcrypt.compare(password, user.password);
+    if (!validPassword) {
+      return res.status(401).json({ success: false, message: "Invalid email or password." });
+    }
 
-      const token = jwt.sign(
-        { id: user.id, name: user.name },
-        process.env.JWT_SECRET,
-        { expiresIn: "1h" }
-      );
+    // Generate access token
+    const accessToken = jwt.sign(
+      { 
+        id: user.id, 
+        name: user.name,
+        role: user.role
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: "24h" }
+    );
 
-      res.status(200).json({
-        success: true,
-        message: "Login successful.",
-        token,
-        user: {
-          id: user.id,
-          name: user.name,
-          email: user.email
-        },
-      });
+    res.status(200).json({
+      success: true,
+      message: "Login successful.",
+      accessToken,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role
+      },
     });
   } catch (error) {
     console.error("Error during login:", error);
@@ -139,23 +135,67 @@ router.post("/login", async (req, res) => {
   }
 });
 
-// Admin-only route
-router.get("/admin/users", authenticateToken, isAdmin, (req, res) => {
-  const query = "SELECT id, name, email, role, created_at FROM users";
-  db.query(query, (err, results) => {
-    if (err) {
-      console.error("Error fetching users:", err);
-      return res.status(500).json({ success: false, message: "Database error." });
+// Add refresh token endpoint
+router.post("/refresh-token", async (req, res) => {
+  const { refreshToken } = req.body;
+
+  if (!refreshToken) {
+    return res.status(401).json({ success: false, message: "Refresh token is required." });
+  }
+
+  try {
+    // Verify refresh token
+    const decoded = jwt.verify(refreshToken, process.env.JWT_SECRET);
+    
+    // Check if refresh token exists in database
+    const [results] = await db.query(
+      "SELECT * FROM users WHERE id = ? AND refresh_token = ?",
+      [decoded.id, refreshToken]
+    );
+
+    if (results.length === 0) {
+      return res.status(403).json({ success: false, message: "Invalid refresh token." });
     }
+
+    const user = results[0];
+
+    // Generate new access token
+    const newAccessToken = jwt.sign(
+      { 
+        id: user.id, 
+        name: user.name,
+        role: user.role
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: "24h" }
+    );
+
+    res.json({
+      success: true,
+      accessToken: newAccessToken
+    });
+  } catch (error) {
+    console.error("Error refreshing token:", error);
+    res.status(403).json({ success: false, message: "Invalid refresh token." });
+  }
+});
+
+// Admin-only route
+router.get("/admin/users", authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const [results] = await db.query("SELECT id, name, email, role, created_at FROM users");
     res.json({ success: true, users: results });
-  });
+  } catch (err) {
+    console.error("Error fetching users:", err);
+    res.status(500).json({ success: false, message: "Database error." });
+  }
 });
 
 // Fetch Logged-In User's Details (UPDATED)
 router.get("/user", authenticateToken, (req, res) => {
   const userId = req.user.id;
 
-  const query = "SELECT id, name, email FROM users WHERE id = ?";
+  const query = "SELECT id, name, email, role FROM users WHERE id = ?";
   db.query(query, [userId], (err, results) => {
     if (err) {
       console.error("Error fetching user details:", err);
@@ -246,6 +286,47 @@ router.post("/reset-password", (req, res) => {
 // Logout (Client-side should handle token removal)
 router.post("/logout", (req, res) => {
   res.json({ success: true, message: "Logged out successfully." });
+});
+
+// Temporary route to set admin password (DELETE THIS ROUTE AFTER FIRST USE)
+router.post("/reset-admin-password", async (req, res) => {
+  try {
+    const adminEmail = "admin.foodhub@gmail.com";
+    const newPassword = "Admin123!"; // Correct admin password
+    
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    
+    const updateQuery = "UPDATE users SET password = ? WHERE email = ?";
+    const [result] = await db.query(updateQuery, [hashedPassword, adminEmail]);
+    
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ success: false, message: "Admin user not found" });
+    }
+    
+    res.json({ 
+      success: true, 
+      message: "Admin password updated successfully",
+      tempPassword: newPassword // REMOVE THIS IN PRODUCTION
+    });
+  } catch (error) {
+    console.error("Error in reset-admin-password:", error);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+});
+
+// Verify token endpoint
+router.post('/verify-token', authenticateToken, (req, res) => {
+    // If we get here, it means the token is valid (authenticateToken middleware passed)
+    res.json({ 
+        success: true, 
+        message: 'Token is valid',
+        user: {
+            id: req.user.id,
+            name: req.user.name,
+            email: req.user.email,
+            role: req.user.role
+        }
+    });
 });
 
 module.exports = router;

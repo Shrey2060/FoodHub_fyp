@@ -2,7 +2,6 @@ import React from 'react'
 import "./About.css"
 import dish from "../../assets/images/dish.jpg";
 import Header from '../Header';
-import Footer from '../Footer/Footer';
 
 const About = () => {
     return (
@@ -32,7 +31,6 @@ const About = () => {
                 </p>
             </div>
         </div>
-        <Footer />
         </>
     )
 }

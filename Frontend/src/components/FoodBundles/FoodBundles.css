@@ -1,6 +1,10 @@
 /* FoodBundles.css */
 
 .food-bundles-container {
+    position: relative;
+    min-height: 100vh;
+    padding: 2rem;
+    background-color: #f5f5f5;
     min-height: 100vh;
     background-size: cover;
     background-position: center;
@@ -34,6 +38,141 @@
     font-size: 1rem;
     color: #666;
     margin-bottom: 30px;
+}
+
+.bundle-card-container {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    background: white;
+    border-radius: 12px;
+    padding: 1rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    transition: transform 0.2s;
+}
+
+.bundle-card-container:hover {
+    transform: translateY(-5px);
+}
+
+.experience-buttons {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    justify-content: center;
+    padding: 0.5rem;
+}
+
+.experience-btn {
+    padding: 0.5rem 1rem;
+    border: none;
+    border-radius: 20px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    color: white;
+}
+
+.experience-btn.trivia {
+    background-color: #ff6b6b;
+}
+
+.experience-btn.recipe {
+    background-color: #4ecdc4;
+}
+
+.experience-btn.playlist {
+    background-color: #45b7d1;
+}
+
+.experience-btn:hover {
+    transform: scale(1.05);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.experience-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.experience-content {
+    background: white;
+    padding: 2rem;
+    border-radius: 12px;
+    max-width: 600px;
+    width: 90%;
+    max-height: 80vh;
+    overflow-y: auto;
+    position: relative;
+}
+
+.close-btn {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+    color: #666;
+}
+
+.trivia-content .question {
+    margin-bottom: 2rem;
+}
+
+.options {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+.option-btn {
+    padding: 0.75rem;
+    border: 2px solid #ddd;
+    border-radius: 8px;
+    background: white;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.option-btn:hover {
+    border-color: #ff6b6b;
+    background: #fff5f5;
+}
+
+.recipe-content .steps {
+    margin-top: 1rem;
+}
+
+.step {
+    padding: 1rem;
+    background: #f8f9fa;
+    border-radius: 8px;
+    margin-bottom: 0.5rem;
+}
+
+.playlist-content .genres {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin: 1rem 0;
+}
+
+.genre-tag {
+    padding: 0.5rem 1rem;
+    background: #e9ecef;
+    border-radius: 20px;
+    font-size: 0.9rem;
 }
 
 .bundles-grid {
