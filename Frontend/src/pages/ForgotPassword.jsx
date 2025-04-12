@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import axios from "axios";
+import "./ForgotPassword.css";
 
 
 const ForgotPassword = () => {
@@ -10,8 +11,23 @@ const ForgotPassword = () => {
   const [showErrorModal, setShowErrorModal] = useState(false);
   const [loading, setLoading] = useState(false); // Add loading state
 
+  const validateEmail = (email) => {
+    const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return re.test(email);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    
+    if (!validateEmail(email)) {
+      setError("Please enter a valid email address");
+      setShowErrorModal(true);
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+    setMessage("");
   
     try {
       const response = await axios.post("http://localhost:5000/api/auth/forgot-password", {
@@ -21,14 +37,18 @@ const ForgotPassword = () => {
       if (response.data.success) {
         setMessage(response.data.message);
         setShowSuccessModal(true);
+        setEmail(""); // Clear email after successful submission
       } else {
         setError(response.data.message);
         setShowErrorModal(true);
       }
     } catch (error) {
+      const errorMessage = error.response?.data?.message || "An error occurred. Please try again later.";
       console.error("Error during forgot password request:", error.message);
-      setError("An error occurred. Please try again later.");
+      setError(errorMessage);
       setShowErrorModal(true);
+    } finally {
+      setLoading(false);
     }
   };
   

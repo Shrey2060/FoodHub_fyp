@@ -1,13 +1,19 @@
 .search-results-container {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 40px 20px;
+  padding: 2rem;
+  min-height: calc(100vh - 80px);
+  background-color: #f8f9fa;
 }
 
-.search-results-container h1 {
-  font-size: 24px;
+.search-results-content {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.search-results-content h2 {
   color: #333;
-  margin-bottom: 24px;
+  margin-bottom: 2rem;
+  font-size: 2rem;
+  text-align: center;
 }
 
 .search-results-grid {
@@ -19,37 +25,50 @@
 
 .product-card {
   background: white;
-  border-radius: 12px;
+  border-radius: 10px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+  transition: transform 0.3s ease;
   overflow: hidden;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
 .product-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  transform: translateY(-5px);
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
 }
 
 .product-actions {
-  padding: 16px;
   display: flex;
-  gap: 12px;
+  gap: 1rem;
+  padding: 1rem;
   justify-content: center;
 }
 
-.add-to-cart-btn {
-  padding: 8px 16px;
-  background-color: #ff4d4d;
-  color: white;
+.add-to-cart-btn,
+.order-now-btn {
+  padding: 0.5rem 1rem;
   border: none;
-  border-radius: 6px;
-  font-size: 14px;
+  border-radius: 5px;
   cursor: pointer;
-  transition: background-color 0.2s ease;
+  font-weight: 600;
+  transition: background-color 0.3s ease;
+}
+
+.add-to-cart-btn {
+  background-color: #4CAF50;
+  color: white;
+}
+
+.order-now-btn {
+  background-color: #2196F3;
+  color: white;
 }
 
 .add-to-cart-btn:hover {
-  background-color: #ff3333;
+  background-color: #45a049;
+}
+
+.order-now-btn:hover {
+  background-color: #1976D2;
 }
 
 .loading {
@@ -92,17 +111,28 @@
   background-color: #ff3333;
 }
 
-.popup-overlay {
+.popup-message {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  justify-content: center;
-  align-items: center;
+  top: 20px;
+  right: 20px;
+  background-color: #4CAF50;
+  color: white;
+  padding: 1rem 2rem;
+  border-radius: 5px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
   z-index: 1000;
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
 }
 
 .popup-container {

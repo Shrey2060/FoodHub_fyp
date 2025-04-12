@@ -211,76 +211,172 @@ router.get("/user", authenticateToken, (req, res) => {
 });
 
 // Forgot Password Endpoint (UPDATED)
-router.post("/forgot-password", (req, res) => {
+router.post("/forgot-password", async (req, res) => {
   const { email } = req.body;
 
   if (!email) {
     return res.status(400).json({ success: false, message: "Email is required." });
   }
 
-  const query = "SELECT * FROM users WHERE email = ?";
-  db.query(query, [email], async (err, results) => {
-    if (err) {
-      console.error("Error fetching user for forgot-password:", err);
-      return res.status(500).json({ success: false, message: "Database error." });
-    }
+  // Email validation regex
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) {
+    return res.status(400).json({ success: false, message: "Invalid email format." });
+  }
+
+  try {
+    // Check if user exists
+    const [results] = await db.query("SELECT * FROM users WHERE email = ?", [email]);
 
     if (results.length === 0) {
       return res.status(404).json({ success: false, message: "Email not found." });
     }
 
+    // Generate reset token and set expiry
     const token = crypto.randomBytes(32).toString("hex");
     const resetLink = `http://localhost:5173/reset-password/${token}`;
-    const expiryTime = new Date(Date.now() + 3600000);
+    const expiryTime = new Date(Date.now() + 3600000); // 1 hour from now
 
-    const updateQuery = "UPDATE users SET reset_token = ?, reset_token_expiry = ? WHERE email = ?";
-    db.query(updateQuery, [token, expiryTime, email], async (err) => {
-      if (err) {
-        console.error("Error updating reset token:", err);
-        return res.status(500).json({ success: false, message: "Failed to generate reset token." });
-      }
+    // Update user with reset token
+    await db.query(
+      "UPDATE users SET reset_token = ?, reset_token_expiry = ? WHERE email = ?",
+      [token, expiryTime, email]
+    );
 
-      try {
-        await sendPasswordResetEmail(email, resetLink);
-        res.json({ success: true, message: "Password reset email sent." });
-      } catch (error) {
-        console.error("Error sending reset email:", error);
-        res.status(500).json({ success: false, message: "Failed to send email." });
-      }
+    // Send reset email
+    await sendPasswordResetEmail(email, resetLink);
+
+    // Clear any previous reset tokens after 24 hours
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    await db.query(
+      "UPDATE users SET reset_token = NULL, reset_token_expiry = NULL WHERE reset_token_expiry < ?",
+      [yesterday]
+    );
+
+    res.json({
+      success: true,
+      message: "Password reset email sent. Please check your inbox."
     });
-  });
+
+  } catch (error) {
+    console.error("Error in forgot-password endpoint:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to process password reset request. Please try again later."
+    });
+  }
+});
+
+// Validate Reset Token Endpoint
+router.get("/validate-reset-token/:token", async (req, res) => {
+  const { token } = req.params;
+
+  try {
+    const [results] = await db.query(
+      "SELECT * FROM users WHERE reset_token = ? AND reset_token_expiry > ?",
+      [token, new Date()]
+    );
+
+    if (results.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid or expired token."
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "Token is valid."
+    });
+  } catch (error) {
+    console.error("Error validating reset token:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to validate token."
+    });
+  }
 });
 
 // Reset Password Endpoint
-router.post("/reset-password", (req, res) => {
+router.post("/reset-password", async (req, res) => {
   const { token, newPassword } = req.body;
 
   if (!token || !newPassword) {
-    return res.status(400).json({ success: false, message: "Token and new password are required." });
+    return res.status(400).json({
+      success: false,
+      message: "Token and new password are required."
+    });
   }
 
-  const query = "SELECT * FROM users WHERE reset_token = ? AND reset_token_expiry > ?";
-  db.query(query, [token, new Date()], async (err, results) => {
-    if (err) {
-      console.error("Error fetching user for reset-password:", err);
-      return res.status(500).json({ success: false, message: "Database error." });
-    }
+  // Password validation
+  if (newPassword.length < 8) {
+    return res.status(400).json({
+      success: false,
+      message: "Password must be at least 8 characters long."
+    });
+  }
+
+  if (!/[A-Z]/.test(newPassword)) {
+    return res.status(400).json({
+      success: false,
+      message: "Password must contain at least one uppercase letter."
+    });
+  }
+
+  if (!/[0-9]/.test(newPassword)) {
+    return res.status(400).json({
+      success: false,
+      message: "Password must contain at least one number."
+    });
+  }
+
+  if (!/[!@#$%^&*]/.test(newPassword)) {
+    return res.status(400).json({
+      success: false,
+      message: "Password must contain at least one special character (!@#$%^&*)."
+    });
+  }
+
+  try {
+    // Check if token is valid and not expired
+    const [results] = await db.query(
+      "SELECT * FROM users WHERE reset_token = ? AND reset_token_expiry > ?",
+      [token, new Date()]
+    );
 
     if (results.length === 0) {
-      return res.status(400).json({ success: false, message: "Invalid or expired token." });
+      return res.status(400).json({
+        success: false,
+        message: "Invalid or expired token. Please request a new password reset."
+      });
     }
 
     const hashedPassword = await bcrypt.hash(newPassword, 10);
-    const updateQuery = "UPDATE users SET password = ?, reset_token = NULL, reset_token_expiry = NULL WHERE reset_token = ?";
-    db.query(updateQuery, [hashedPassword, token], (err) => {
-      if (err) {
-        console.error("Error resetting password:", err);
-        return res.status(500).json({ success: false, message: "Failed to reset password." });
-      }
 
-      res.json({ success: true, message: "Password reset successful." });
+    // Update password and clear reset token
+    await db.query(
+      "UPDATE users SET password = ?, reset_token = NULL, reset_token_expiry = NULL WHERE reset_token = ?",
+      [hashedPassword, token]
+    );
+
+    // Clear expired tokens for all users
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    await db.query(
+      "UPDATE users SET reset_token = NULL, reset_token_expiry = NULL WHERE reset_token_expiry < ?",
+      [yesterday]
+    );
+
+    res.json({
+      success: true,
+      message: "Password has been reset successfully. You can now login with your new password."
     });
-  });
+  } catch (error) {
+    console.error("Error resetting password:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to reset password. Please try again."
+    });
+  }
 });
 
 // Logout (Client-side should handle token removal)

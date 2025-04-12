@@ -2,7 +2,7 @@ import React from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import "./App.css";
 import { Toaster } from 'react-hot-toast';
-import Footer from './components/Footer/Footer';
+import MainLayout from './components/Layout/MainLayout';
 import LandingPage from './pages/LandingPage';
 import Login from "./pages/Login";
 import Register from "./pages/Register";
@@ -69,42 +69,40 @@ function App() {
         <main className="main-content">
           <Routes>
             {/* Public Routes */}
-            <Route path="/" element={<LandingPage />} />
-            <Route path="/home" element={<LandingPage />} />
+            <Route path="/" element={<MainLayout><LandingPage /></MainLayout>} />
+            <Route path="/home" element={<MainLayout><LandingPage /></MainLayout>} />
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/reset-password/:token" element={<ResetPassword />} />
-            <Route path="/food-details/:id" element={<FoodDetails />} />
-            <Route path="/products" element={<ProductPage />} />
-            <Route path="/about" element={<About />} />
-            <Route path="/contact" element={<Contact />} />
-            <Route path="/subscriptionPage" element={<SubscriptionPage />} />
-            <Route path="/invoice" element={<Invoice />} />
+            <Route path="/food-details/:id" element={<MainLayout><FoodDetails /></MainLayout>} />
+            <Route path="/products" element={<MainLayout><ProductPage /></MainLayout>} />
+            <Route path="/about" element={<MainLayout><About /></MainLayout>} />
+            <Route path="/contact" element={<MainLayout><Contact /></MainLayout>} />
+            <Route path="/subscriptionPage" element={<MainLayout><SubscriptionPage /></MainLayout>} />
+            <Route path="/invoice" element={<MainLayout><Invoice /></MainLayout>} />
 
             {/* Protected User Routes */}
             <Route element={<ProtectedRoute />}>
-              <Route path="/cart" element={<Cart />} />
-              <Route path="/orders" element={<OrderHistory />} />
-              <Route path="/local-partners" element={<LocalPartnerships />} />
-              <Route path="/pre-order" element={<PreOrder />} />
-              <Route path="/bundles" element={<FoodBundles />} />
-              <Route path="/allergies" element={<AllergyFilter />} />
-              <Route path="/rewards" element={<RewardPoints />} />
+              <Route path="/cart" element={<MainLayout><Cart /></MainLayout>} />
+              <Route path="/orders" element={<MainLayout><OrderHistory /></MainLayout>} />
+              <Route path="/local-partners" element={<MainLayout><LocalPartnerships /></MainLayout>} />
+              <Route path="/pre-order" element={<MainLayout><PreOrder /></MainLayout>} />
+              <Route path="/bundles" element={<MainLayout><FoodBundles /></MainLayout>} />
+              <Route path="/allergies" element={<MainLayout><AllergyFilter /></MainLayout>} />
+              <Route path="/rewards" element={<MainLayout><RewardPoints /></MainLayout>} />
             </Route>
 
             {/* Protected Admin Routes */}
             <Route element={<AdminProtectedRoute />}>
-              <Route path="/admin" element={<AdminDashboard />} />
-              <Route path="/admin/orders" element={<AdminOrders />} />
+              <Route path="/admin" element={<MainLayout><AdminDashboard /></MainLayout>} />
+              <Route path="/admin/orders" element={<MainLayout><AdminOrders /></MainLayout>} />
             </Route>
 
             {/* 404 Route */}
-            <Route path="*" element={<NotFound />} />
+            <Route path="*" element={<MainLayout><NotFound /></MainLayout>} />
           </Routes>
         </main>
-        <Chatbot />
-        <Footer />
       </div>
     </Router>
   );

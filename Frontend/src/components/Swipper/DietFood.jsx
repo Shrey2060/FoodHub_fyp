@@ -3,7 +3,7 @@ import Slider from "react-slick";
 import "slick-carousel/slick/slick.css";
 import "slick-carousel/slick/slick-theme.css";
 import FoodCard from "../FoodCard/FoodCard";
-import SearchBar from "../SearchBar";
+import SearchBar from "../SearchBar/SearchBar";
 import pork from "../../assets/images/pork.png";
 import right from "../../assets/images/ArrowRight.png";
 import left from "../../assets/images/ArrowLeft.png";

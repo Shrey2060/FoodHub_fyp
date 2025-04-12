@@ -1,47 +1,23 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import Header from '../components/Header';
-import Footer from '../components/Footer/Footer';
 import FoodCard from '../components/FoodCard/FoodCard';
-import { getAllProducts } from '../data/products';
 import './SearchResults.css';
 
 const SearchResults = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const [searchResults, setSearchResults] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
   const [popupMessage, setPopupMessage] = useState(null);
   const [isLoggedIn] = useState(!!sessionStorage.getItem('authToken'));
-
-  const searchQuery = new URLSearchParams(location.search).get('q');
-  const allProducts = getAllProducts();
+  
+  // Get search results from location state
+  const { searchTerm, results } = location.state || { searchTerm: '', results: [] };
 
   // Helper function to format currency in Nepali Rupees
   const formatCurrency = (amount) => {
     return `Rs. ${Number(amount || 0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`;
   };
-
-  useEffect(() => {
-    if (!searchQuery) {
-      setSearchResults([]);
-      setLoading(false);
-      return;
-    }
-
-    // Filter products based on search query
-    const searchLower = searchQuery.toLowerCase();
-    const filteredProducts = allProducts.filter(product => 
-      product.name.toLowerCase().includes(searchLower) ||
-      product.category.toLowerCase().includes(searchLower) ||
-      product.description.toLowerCase().includes(searchLower)
-    );
-
-    setSearchResults(filteredProducts);
-    setLoading(false);
-  }, [searchQuery]);
 
   const handleAddToCart = async (product) => {
     if (!isLoggedIn) {
@@ -125,36 +101,17 @@ const SearchResults = () => {
     setTimeout(() => setPopupMessage(null), 3000);
   };
 
-  if (loading) {
-    return (
-      <>
-        <Header />
-        <div className="search-results-container">
-          <div className="loading">Loading search results...</div>
-        </div>
-        <Footer />
-      </>
-    );
-  }
-
-  if (error) {
-    return (
-      <>
-        <Header />
-        <div className="search-results-container">
-          <div className="error">{error}</div>
-        </div>
-        <Footer />
-      </>
-    );
-  }
-
   return (
-    <>
+    <div className="search-results-container">
       <Header />
-      <div className="search-results-container">
-        <h1>Search Results for "{searchQuery}"</h1>
-        {searchResults.length === 0 ? (
+      {popupMessage && (
+        <div className="popup-message">
+          {popupMessage}
+        </div>
+      )}
+      <div className="search-results-content">
+        <h2>Search Results for "{searchTerm}"</h2>
+        {results.length === 0 ? (
           <div className="no-results">
             <p>No products found matching your search.</p>
             <button onClick={() => navigate('/products')} className="browse-all-btn">
@@ -163,7 +120,7 @@ const SearchResults = () => {
           </div>
         ) : (
           <div className="search-results-grid">
-            {searchResults.map((product) => (
+            {results.map((product) => (
               <div key={product.id} className="product-card">
                 <FoodCard
                   img={product.imageUrl}
@@ -181,7 +138,7 @@ const SearchResults = () => {
                   </button>
                   <button 
                     onClick={() => handleOrderNow(product)}
-                    className="add-to-cart-btn"
+                    className="order-now-btn"
                   >
                     Order Now
                   </button>
@@ -190,20 +147,8 @@ const SearchResults = () => {
             ))}
           </div>
         )}
-
-        {popupMessage && (
-          <div className="popup-overlay">
-            <div className="popup-container">
-              <p>{popupMessage}</p>
-              <button onClick={() => setPopupMessage(null)} className="popup-button">
-                OK
-              </button>
-            </div>
-          </div>
-        )}
       </div>
-      <Footer />
-    </>
+    </div>
   );
 };
 
