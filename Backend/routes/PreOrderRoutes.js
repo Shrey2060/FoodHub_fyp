@@ -79,12 +79,32 @@ router.get('/', authenticateToken, async (req, res) => {
             [user_id]
         );
 
+        // Improved parsing of items array
+        const formattedPreOrders = preOrders.map(order => {
+            let parsedItems = [];
+            try {
+                // Only attempt to parse if items exists and is not null
+                if (order.items) {
+                    // Wrap in square brackets and parse as JSON array
+                    parsedItems = JSON.parse('[' + order.items + ']');
+                }
+            } catch (error) {
+                console.error(`Error parsing items for pre-order ${order.id}:`, error);
+                console.error('Raw items data:', order.items);
+                parsedItems = [];
+            }
+            
+            return {
+                ...order,
+                items: parsedItems
+            };
+        });
+
+        console.log('Sending formatted pre-orders:', formattedPreOrders);
+
         res.json({
             success: true,
-            pre_orders: preOrders.map(order => ({
-                ...order,
-                items: JSON.parse('[' + order.items + ']')
-            }))
+            pre_orders: formattedPreOrders
         });
     } catch (error) {
         console.error('Error fetching pre-orders:', error);
@@ -123,12 +143,26 @@ router.get('/admin', authenticateToken, isAdmin, async (req, res) => {
              ORDER BY po.scheduled_date DESC`,
         );
 
-        const formattedPreOrders = preOrders.map(order => ({
-            ...order,
-            items: order.items ? JSON.parse('[' + order.items + ']') : []
-        }));
+        // Improved parsing with better error handling
+        const formattedPreOrders = preOrders.map(order => {
+            let parsedItems = [];
+            try {
+                if (order.items) {
+                    parsedItems = JSON.parse('[' + order.items + ']');
+                }
+            } catch (error) {
+                console.error(`Error parsing items for admin pre-order ${order.id}:`, error);
+                console.error('Raw items data:', order.items);
+                parsedItems = [];
+            }
+            
+            return {
+                ...order,
+                items: parsedItems
+            };
+        });
 
-        console.log('Sending pre-orders:', formattedPreOrders);
+        console.log('Sending admin pre-orders:', formattedPreOrders.length);
 
         res.json({
             success: true,

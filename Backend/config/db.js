@@ -1,10 +1,10 @@
-const mysql = require("mysql2/promise"); // Use mysql2/promise for async/await support
+const mysql = require('mysql2/promise');
 
 const pool = mysql.createPool({
-  host: process.env.DB_HOST || "localhost",
-  user: process.env.DB_USER || "root",  // Replace with your MySQL username if different
-  password: process.env.DB_PASSWORD || "1234", // Add your MySQL root password
-  database: process.env.DB_NAME || "foodhub", // Replace with your database name
+  host: 'localhost',
+  user: 'root',
+  password: '1234',  // Using the password from your existing configuration
+  database: 'foodhub',
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0

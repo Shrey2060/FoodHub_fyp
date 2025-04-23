@@ -237,6 +237,46 @@ router.post('/confirm', authenticateToken, async (req, res) => {
     }
 });
 
+// Get included items for a subscription plan
+router.get('/included-items/:planId', authenticateToken, async (req, res) => {
+    try {
+        const { planId } = req.params;
+        
+        // First check if the plan exists
+        const [planRows] = await pool.execute(
+            'SELECT * FROM subscription_plans WHERE id = ?',
+            [planId]
+        );
+        
+        if (planRows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Subscription plan not found'
+            });
+        }
+        
+        // Get items included in this subscription plan
+        const [itemRows] = await pool.execute(
+            `SELECT p.* 
+             FROM products p 
+             JOIN subscription_plan_items spi ON p.id = spi.product_id 
+             WHERE spi.plan_id = ?`,
+            [planId]
+        );
+        
+        return res.json({
+            success: true,
+            items: itemRows
+        });
+    } catch (error) {
+        console.error('Error fetching subscription plan items:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Failed to fetch subscription plan items'
+        });
+    }
+});
+
 // Admin Routes
 
 // Get all subscriptions (admin only)
@@ -244,14 +284,20 @@ router.get('/admin/subscriptions', authenticateToken, isAdmin, async (req, res) 
     try {
         const [subscriptions] = await pool.query(
             `SELECT s.*, u.name as user_name, u.email as user_email,
-                    p.name as plan_name, p.price
+                    p.name as plan_name, p.price, p.features, p.duration_months as duration
              FROM subscriptions s
              JOIN users u ON s.user_id = u.id
              JOIN subscription_plans p ON s.plan_id = p.id
              ORDER BY s.created_at DESC`
         );
 
-        res.json({ success: true, subscriptions });
+        // Format the features as arrays
+        const formattedSubscriptions = subscriptions.map(sub => ({
+            ...sub,
+            features: sub.features ? sub.features.split(',') : []
+        }));
+
+        res.json({ success: true, subscriptions: formattedSubscriptions });
     } catch (error) {
         console.error('Error fetching all subscriptions:', error);
         res.status(500).json({ success: false, message: 'Error fetching subscriptions' });

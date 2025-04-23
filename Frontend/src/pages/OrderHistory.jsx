@@ -181,19 +181,51 @@ const OrderHistory = () => {
 
   // Calculate totals for an order
   const calculateOrderTotals = (order) => {
-    const subtotal = order.items.reduce(
-      (acc, item) => acc + (parseFloat(item.price || 0) * parseInt(item.quantity || 1)),
-      0
-    );
-    const vat = Math.round(subtotal * 0.13 * 100) / 100;
-    const total = Math.round((subtotal + vat) * 100) / 100;
+    // Ensure we have valid items
+    if (!order.items || !Array.isArray(order.items) || order.items.length === 0) {
+      console.warn('Order has no valid items for total calculation:', order.id);
+      setOrderTotals(prev => ({
+        ...prev,
+        [order.id]: {
+          subtotal: 0,
+          vat: 0,
+          total: 0
+        }
+      }));
+      return;
+    }
+
+    // Log raw items for debugging
+    console.log(`Calculating totals for order #${order.id}:`, order.items);
+
+    // Calculate subtotal with exact decimal handling
+    let subtotal = 0;
+    order.items.forEach(item => {
+      const price = Number(item.price || 0);
+      const quantity = Number(item.quantity || 1);
+      const itemTotal = price * quantity;
+      console.log(`Item: ${item.name}, Price: ${price}, Quantity: ${quantity}, Total: ${itemTotal}`);
+      subtotal += itemTotal;
+    });
     
+    // Ensure subtotal is properly rounded to 2 decimal places
+    subtotal = Math.round(subtotal * 100) / 100;
+    
+    // Calculate VAT with exact decimal handling
+    const vat = Math.round(subtotal * 0.13 * 100) / 100;
+    
+    // Calculate total with exact decimal handling
+    const total = Math.round((subtotal + vat) * 100) / 100;
+
+    console.log(`Order #${order.id} totals - Subtotal: ${subtotal}, VAT: ${vat}, Total: ${total}`);
+
+    // Store with exact decimal places
     setOrderTotals(prev => ({
       ...prev,
-      [order.id]: { 
-        subtotal: Math.round(subtotal * 100) / 100,
-        vat,
-        total
+      [order.id]: {
+        subtotal: subtotal,
+        vat: vat,
+        total: total
       }
     }));
   };
@@ -254,10 +286,27 @@ const OrderHistory = () => {
       
       if (response.data && response.data.success && Array.isArray(response.data.orders)) {
         console.log('Processing orders:', response.data.orders);
-        const orders = response.data.orders;
-        setOrders(orders);
+        // Process orders to ensure proper status flags
+        const processedOrders = response.data.orders.map(order => {
+          // Ensure is_confirmed is properly set for paid orders
+          const isConfirmed = 
+            order.is_confirmed || 
+            order.payment_status === 'paid' || 
+            order.status !== 'pending';
+          
+          return {
+            ...order,
+            is_confirmed: isConfirmed,
+            // Ensure status is at least 'processing' if paid
+            status: order.payment_status === 'paid' && order.status === 'pending' 
+              ? 'processing' 
+              : order.status
+          };
+        });
+        
+        setOrders(processedOrders);
         // Calculate totals for each order
-        orders.forEach(order => calculateOrderTotals(order));
+        processedOrders.forEach(order => calculateOrderTotals(order));
       } else {
         console.error('Invalid orders data format:', response.data);
         setError('Invalid data format received from server');
@@ -316,7 +365,192 @@ const OrderHistory = () => {
     }
   };
 
-  // Modify handleConfirmOrder function
+  // Add this function after handleKhaltiPayment
+  const awardRewardPoints = async (orderId, orderAmount) => {
+    try {
+        const token = sessionStorage.getItem('authToken');
+        if (!token) {
+            console.error('No auth token found');
+            return;
+        }
+
+        // Calculate reward points (1 point for every 10 rupees spent)
+        const pointsToAward = Math.floor(orderAmount / 10);
+        
+        console.log('Awarding points:', {
+            orderId,
+            orderAmount,
+            pointsToAward,
+            token: token ? 'Token exists' : 'No token'
+        });
+
+        const response = await axios.post(
+            'http://localhost:5000/api/rewards/add',
+            {
+                order_id: orderId,
+                points: pointsToAward,
+                transaction_type: 'purchase',
+                description: `Reward points for Order #${orderId}`
+            },
+            {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                }
+            }
+        );
+
+        console.log('Reward points response:', response.data);
+
+        if (response.data.success) {
+            toast.success(`🎉 Earned ${pointsToAward} reward points!`);
+            // Update the reward points display in the Greeting component
+            const rewardEvent = new CustomEvent('rewardPointsUpdated');
+            window.dispatchEvent(rewardEvent);
+        }
+    } catch (error) {
+        console.error('Error awarding reward points:', error.response || error);
+        toast.error('Failed to award reward points');
+    }
+};
+
+  // Update the useEffect that handles Khalti return
+  useEffect(() => {
+    const handleKhaltiReturn = async () => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const orderId = urlParams.get('order_id');
+        const pidx = urlParams.get('pidx') || sessionStorage.getItem('khalti_pidx');
+        const paymentStatus = urlParams.get('status') || urlParams.get('payment_status');
+        const type = urlParams.get('type');
+
+        // Log all URL parameters for debugging
+        console.log('URL parameters from Khalti return:', Object.fromEntries(urlParams.entries()));
+
+        if (type !== 'order' || !orderId || !pidx || paymentStatus !== 'Completed') {
+            console.log('Skipping Khalti return processing - missing required parameters');
+            return;
+        }
+
+        // Get stored payment info
+        const paymentInfoStr = sessionStorage.getItem('khalti_payment_info');
+        console.log('Stored payment info:', paymentInfoStr);
+        
+        const paymentInfo = JSON.parse(paymentInfoStr || '{}');
+        if (!paymentInfo.orderId || paymentInfo.orderId !== parseInt(orderId)) {
+            toast.error('Invalid order information');
+            console.error('Order ID mismatch:', { 
+                storedOrderId: paymentInfo.orderId, 
+                returnedOrderId: orderId 
+            });
+            return;
+        }
+
+        try {
+            const token = sessionStorage.getItem('authToken');
+            const loadingToast = toast.loading('Verifying payment...');
+
+            console.log('Verifying Khalti payment:', {
+                orderId,
+                pidx,
+                amount: paymentInfo.amount, // This should be in paisa
+                storedRupees: paymentInfo.rupees,
+                paymentInfo
+            });
+
+            // Verify payment with Khalti
+            const verifyResponse = await axios.post(
+                `http://localhost:5000/api/payment/khalti/verify`,
+                {
+                    pidx: pidx,
+                    amount: paymentInfo.amount, // This should be in paisa already
+                    orderId: orderId
+                },
+                {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                }
+            );
+
+            console.log('Khalti verification response:', verifyResponse.data);
+
+            if (verifyResponse.data.success) {
+                // Update order status
+                const updateResponse = await axios.put(
+                    `http://localhost:5000/api/orders/${orderId}/confirm`,
+                    {
+                        payment_method: 'khalti',
+                        payment_status: 'paid',
+                        status: 'processing',
+                        transaction_id: pidx,
+                        khalti_payment_idx: pidx,
+                        amount_paid: paymentInfo.rupees // This is in rupees for database storage
+                    },
+                    {
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Content-Type': 'application/json'
+                        }
+                    }
+                );
+
+                console.log('Order update response:', updateResponse.data);
+
+                if (updateResponse.data.success) {
+                    // Award reward points
+                    await awardRewardPoints(orderId, paymentInfo.rupees);
+
+                    // Update the order in local state to reflect the payment
+                    setOrders(prevOrders => 
+                        prevOrders.map(order => 
+                            order.id === parseInt(orderId) 
+                                ? { 
+                                    ...order, 
+                                    status: 'processing', 
+                                    is_confirmed: true,
+                                    payment_status: 'paid',
+                                    payment_method: 'khalti',
+                                    transaction_id: pidx,
+                                    khalti_payment_idx: pidx 
+                                } 
+                                : order
+                        )
+                    );
+
+                    // Clear all Khalti session data
+                    sessionStorage.removeItem('khalti_payment_info');
+                    sessionStorage.removeItem('khalti_pidx');
+                    sessionStorage.removeItem('khalti_payment_amount');
+
+                    // Navigate to invoice - IMPORTANT: Pass amount in paisa so Invoice component can convert it properly
+                    navigate(`/invoice?order_id=${orderId}&pidx=${pidx}&payment_status=paid&transaction_id=${pidx}&type=order&amount=${paymentInfo.amount}`);
+                    toast.dismiss(loadingToast);
+                    toast.success('Payment successful! Generating invoice...');
+                    
+                    // Refresh orders
+                    await fetchOrders();
+                } else {
+                    toast.dismiss(loadingToast);
+                    toast.error('Failed to update order status');
+                    console.error('Order update failed:', updateResponse.data);
+                }
+            } else {
+                toast.dismiss(loadingToast);
+                toast.error('Payment verification failed');
+                console.error('Payment verification failed:', verifyResponse.data);
+            }
+        } catch (error) {
+            console.error('Payment verification error:', error);
+            console.error('Error details:', error.response?.data || 'No response data');
+            toast.error('Payment verification failed. Please contact support if payment was deducted.');
+        }
+    };
+
+    handleKhaltiReturn();
+}, [navigate]);
+
+  // Update handleConfirmOrder to include reward points for cash payments
   const handleConfirmOrder = async (orderId, paymentMethod) => {
     try {
         setLoading(true);
@@ -351,8 +585,13 @@ const OrderHistory = () => {
                 )
             );
 
-            // If it's cash on delivery, show success dialog
+            // If it's cash on delivery, show success dialog and award points
             if (paymentMethod === 'cash') {
+                const order = orders.find(o => o.id === orderId);
+                if (order) {
+                    const orderTotal = orderTotals[orderId]?.total || 0;
+                    await awardRewardPoints(orderId, orderTotal);
+                }
                 setSuccessDialog({
                     isOpen: true,
                     message: 'Your order has been confirmed! Our team will process it shortly. Payment status: Pending'
@@ -371,59 +610,97 @@ const OrderHistory = () => {
         setLoading(false);
         setConfirmDialog({ isOpen: false, orderId: null });
     }
-  };
+};
 
   // Update handleKhaltiPayment function
   const handleKhaltiPayment = async (order) => {
     try {
-        const amount = Math.round(orderTotals[order.id]?.total * 100); // Convert to paisa
+        // Get exact amount from order total with proper decimal handling
+        const orderTotal = orderTotals[order.id];
         
-        if (!amount) {
+        if (!orderTotal || !orderTotal.total) {
             toast.error('Invalid order amount');
+            console.error('Missing order total for order:', order.id);
+            return;
+        }
+        
+        // Get exact amount in rupees, properly rounded
+        const orderAmount = Math.round(orderTotal.total * 100) / 100;
+        
+        console.log(`Order #${order.id} amount for payment:`, {
+            orderTotal: orderTotal,
+            roundedAmount: orderAmount
+        });
+        
+        if (!orderAmount || isNaN(orderAmount) || orderAmount <= 0) {
+            toast.error('Invalid order amount');
+            console.error('Invalid order amount:', orderAmount);
             return;
         }
 
-        // Store complete order details in sessionStorage
-        const orderDetails = {
-            id: order.id,
-            amount: amount,
-            items: order.items,
-            total_amount: orderTotals[order.id]?.total,
-            contact_number: order.contact_number,
-            delivery_address: order.delivery_address,
-            payment_method: 'khalti',
-            status: order.status,
-            is_confirmed: order.is_confirmed
-        };
-        sessionStorage.setItem('currentKhaltiOrder', JSON.stringify(orderDetails));
+        // Convert to paisa (Khalti requires amount in paisa)
+        const paisaAmount = Math.round(orderAmount * 100);
 
+        // Log for detailed debugging
+        console.log('Payment amounts:', {
+            orderNumber: order.id,
+            orderAmountRupees: orderAmount,
+            paisaAmount: paisaAmount,
+            rawOrderTotal: orderTotal.total
+        });
+
+        // Create payload - IMPORTANT: Khalti API expects amount in PAISA (not rupees)
         const payload = {
-            return_url: `http://localhost:5173/orders?order_id=${order.id}&payment_status=paid`,
+            return_url: `http://localhost:5173/payment/success?order_id=${order.id}&type=order`,
             website_url: "http://localhost:5173",
-            amount: amount,
+            amount: paisaAmount, // Send the amount in PAISA (not rupees)
             purchase_order_id: `order_${order.id}_${Date.now()}`,
             purchase_order_name: `Order #${order.id}`,
             customer_info: {
                 name: sessionStorage.getItem('userName') || "Customer",
                 email: sessionStorage.getItem('userEmail') || "",
-                phone: order.contact_number || ""
+                phone: order.contact_number || "9800000000"
             },
             amount_breakdown: [
                 {
                     label: "Order Amount",
-                    amount: amount
+                    amount: paisaAmount // Send the amount in PAISA (not rupees)
                 }
             ],
-            product_details: order.items.map(item => ({
-                identity: item.id,
+            product_details: order.items.map(item => {
+                const itemPrice = Number(item.price || 0);
+                const quantity = Number(item.quantity || 1);
+                const itemTotal = itemPrice * quantity;
+                
+                // Convert to paisa for API
+                const itemPricePaisa = Math.round(itemPrice * 100);
+                const itemTotalPaisa = Math.round(itemTotal * 100);
+                
+                return {
+                    identity: item.id || `item_${Date.now()}`,
+                    name: item.name,
+                    total_price: itemTotalPaisa, // Send the amount in PAISA (not rupees)
+                    quantity: quantity,
+                    unit_price: itemPricePaisa // Send the amount in PAISA (not rupees)
+                };
+            })
+        };
+
+        // Store payment info (in rupees for UI display)
+        const paymentInfo = {
+            orderId: order.id,
+            amount: paisaAmount, // Store in paisa for verification
+            rupees: orderAmount, // Store in rupees for display
+            items: order.items.map(item => ({
                 name: item.name,
-                total_price: item.price * item.quantity * 100,
-                quantity: item.quantity,
-                unit_price: item.price * 100
+                quantity: Number(item.quantity || 1),
+                price: Number(item.price || 0)
             }))
         };
 
-        console.log("Initiating Khalti payment with payload:", payload);
+        // Store payment info in session storage
+        sessionStorage.setItem('khalti_payment_info', JSON.stringify(paymentInfo));
+        sessionStorage.setItem('khalti_payment_amount', orderAmount.toString());
 
         const token = sessionStorage.getItem('authToken');
         const response = await axios.post(
@@ -437,118 +714,22 @@ const OrderHistory = () => {
             }
         );
 
-        console.log("Khalti initiation response:", response.data);
-
-        if (response.data && response.data.payment_url) {
-            toast.success('Redirecting to Khalti payment page...');
-            // Redirect to Khalti payment page
-            window.location.href = response.data.payment_url;
+        if (response.data?.data?.payment_url) {
+            if (response.data.data.pidx) {
+                sessionStorage.setItem('khalti_pidx', response.data.data.pidx);
+            }
+            toast.success(`Initiating payment for Rs. ${orderAmount.toFixed(2)}`);
+            window.location.href = response.data.data.payment_url;
         } else {
-            toast.error('Failed to initiate payment: ' + (response.data?.message || 'Unknown error'));
+            console.error('Invalid Khalti response:', response.data);
+            toast.error('Failed to initiate payment. Please try again.');
         }
     } catch (error) {
-        console.error('Error initiating Khalti payment:', error.response || error);
-        toast.error(error.response?.data?.message || 'Failed to initiate payment');
+        console.error('Error initiating Khalti payment:', error);
+        console.error('Error details:', error.response?.data || 'No response data');
+        toast.error('Failed to initiate payment. Please try again.');
     }
   };
-
-  // Update useEffect to handle return from Khalti payment
-  useEffect(() => {
-    const handleKhaltiReturn = async () => {
-      const urlParams = new URLSearchParams(window.location.search);
-      const orderId = urlParams.get('order_id');
-      const pidx = urlParams.get('pidx');
-      const paymentStatus = urlParams.get('payment_status');
-
-      console.log("Handling Khalti return with params:", { orderId, pidx, paymentStatus });
-
-      if (orderId && paymentStatus === 'paid') {
-        try {
-          const token = sessionStorage.getItem('authToken');
-          const storedOrder = JSON.parse(sessionStorage.getItem('currentKhaltiOrder') || '{}');
-          
-          console.log("Stored order details:", storedOrder);
-
-          if (storedOrder.id === parseInt(orderId)) {
-            const loadingToast = toast.loading('Verifying payment...');
-
-            try {
-              // First verify payment with Khalti
-              const verifyResponse = await axios.post(
-                `http://localhost:5000/api/khalti/verify`,
-                {
-                  pidx: pidx,
-                  amount: storedOrder.amount,
-                  orderId: orderId
-                },
-                {
-                  headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                  }
-                }
-              );
-
-              console.log("Payment verification response:", verifyResponse.data);
-
-              if (verifyResponse.data.success) {
-                // If payment is verified, update order status
-                const updateResponse = await axios.put(
-                  `http://localhost:5000/api/orders/${orderId}/confirm`,
-                  {
-                    payment_method: 'khalti',
-                    payment_status: 'paid',
-                    status: 'processing',
-                    transaction_id: pidx,
-                    khalti_payment_idx: pidx
-                  },
-                  {
-                    headers: {
-                      'Authorization': `Bearer ${token}`,
-                      'Content-Type': 'application/json'
-                    }
-                  }
-                );
-
-                if (updateResponse.data.success) {
-                  // Navigate to invoice page immediately after verification
-                  navigate(`/invoice?order_id=${orderId}&pidx=${pidx}&payment_status=paid&transaction_id=${pidx}`);
-                  
-                  // Show success message after navigation
-                  toast.dismiss(loadingToast);
-                  toast.success('Payment successful! Generating invoice...');
-                  
-                  // Clear the stored order
-                  sessionStorage.removeItem('currentKhaltiOrder');
-                  
-                  // Refresh orders to get the latest status
-                  await fetchOrders();
-                } else {
-                  toast.dismiss(loadingToast);
-                  toast.error('Order status update failed');
-                }
-              } else {
-                toast.dismiss(loadingToast);
-                toast.error('Payment verification failed');
-              }
-            } catch (error) {
-              toast.dismiss(loadingToast);
-              console.error('Error in payment verification:', error.response || error);
-              toast.error('Payment verification failed: ' + (error.response?.data?.message || 'Unknown error'));
-            }
-          } else {
-            console.error("Order ID mismatch:", { stored: storedOrder.id, received: orderId });
-            toast.error('Order verification failed');
-          }
-        } catch (error) {
-          console.error('Error in payment verification:', error.response || error);
-          toast.error('Payment verification failed: ' + (error.response?.data?.message || 'Unknown error'));
-        }
-      }
-    };
-
-    handleKhaltiReturn();
-  }, [navigate]);
 
   // Helper function to format dates
   const formatDate = (dateString) => {
@@ -752,9 +933,23 @@ const OrderHistory = () => {
 
   // Update the renderOrderActions function
   const renderOrderActions = (order) => {
+    // First check if payment is already completed or order is confirmed
+    const isPaymentCompleted = order.payment_status === 'paid';
+    const isOrderConfirmed = order.is_confirmed || order.status !== 'pending';
+    
+    // Log for debugging
+    console.log('Order action checks:', {
+      orderId: order.id,
+      status: order.status,
+      payment_status: order.payment_status,
+      is_confirmed: order.is_confirmed,
+      shouldShowConfirmButton: order.status === 'pending' && !isOrderConfirmed && !isPaymentCompleted
+    });
+    
     return (
         <div className="order-actions">
-            {order.status === 'pending' && !order.is_confirmed && order.payment_status !== 'paid' && (
+            {/* Only show confirm button if order is pending, not confirmed and not paid */}
+            {order.status === 'pending' && !isOrderConfirmed && !isPaymentCompleted && (
                 <button
                     className="btn-confirm-order"
                     onClick={() => setConfirmDialog({ 
@@ -782,7 +977,8 @@ const OrderHistory = () => {
                     Remove
                 </button>
             )}
-            {order.status === 'pending' && !order.is_confirmed && order.payment_status !== 'paid' && (
+            {/* Only show delete button if order is pending, not confirmed and not paid */}
+            {order.status === 'pending' && !isOrderConfirmed && !isPaymentCompleted && (
                 <button
                     className="btn-delete"
                     onClick={() => handleDeleteClick(order.id)}
@@ -972,6 +1168,26 @@ const OrderHistory = () => {
                         <span>{item.name}</span>
                         <span>x{item.quantity}</span>
                         <span>{formatCurrency(item.price * item.quantity)}</span>
+                        
+                        {/* Show bundle items if this is a bundle */}
+                        {item.is_bundle && Array.isArray(item.bundle_items) && item.bundle_items.length > 0 && (
+                          <div className="bundle-items-container">
+                            <div className="bundle-items-label">Included Items:</div>
+                            {item.bundle_items.map((bundleItem, bidx) => (
+                              <div key={`bundle-${index}-${bidx}`} className="bundle-item">
+                                <span>{bundleItem.name}</span>
+                                <span>x{bundleItem.quantity}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* If there's a description, show it */}
+                        {item.description && (
+                          <div className="item-description">
+                            {item.description}
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -996,16 +1212,27 @@ const OrderHistory = () => {
               ))
             ) : (
               preOrders.map((order) => {
-                // Safely parse items with error handling
+                // Improved parsing logic for pre-order items
                 let parsedItems = [];
                 try {
-                  parsedItems = typeof order.items === 'string' 
-                    ? JSON.parse(order.items)
-                    : Array.isArray(order.items) 
-                      ? order.items 
-                      : [];
+                  if (typeof order.items === 'string') {
+                    parsedItems = JSON.parse(order.items);
+                  } else if (Array.isArray(order.items)) {
+                    parsedItems = order.items;
+                  } else {
+                    console.warn('Order items is neither string nor array:', order.items);
+                    parsedItems = [];
+                  }
+                  
+                  // Add additional logging to debug the items data
+                  console.log('Pre-order items data:', {
+                    orderId: order.id, 
+                    rawItems: order.items,
+                    parsedItems: parsedItems
+                  });
                 } catch (error) {
-                  console.error('Error parsing order items:', error);
+                  console.error('Error parsing order items for order #' + order.id + ':', error);
+                  console.error('Raw items data:', order.items);
                   parsedItems = [];
                 }
 
@@ -1029,18 +1256,30 @@ const OrderHistory = () => {
 
                     <div className="order-items">
                       <h4>Items:</h4>
-                      {parsedItems.map((item, index) => (
-                        <div key={index} className="order-item">
-                          <div className="item-info">
-                            <span className="item-name">{item.name}</span>
-                            <span className="item-quantity">x{item.quantity}</span>
+                      {Array.isArray(parsedItems) && parsedItems.length > 0 ? (
+                        parsedItems.map((item, index) => (
+                          <div key={index} className="order-item">
+                            <div className="item-info">
+                              <span className="item-name">{item.name}</span>
+                              <span className="item-quantity">x{item.quantity}</span>
+                            </div>
+                            <span className="item-price">Rs. {item.price * item.quantity}</span>
                           </div>
-                          <span className="item-price">Rs. {item.price * item.quantity}</span>
-                        </div>
-                      ))}
-                      {parsedItems.length === 0 && (
+                        ))
+                      ) : (
                         <p className="no-items">No items found in this order</p>
                       )}
+                    </div>
+
+                    <div className="order-summary">
+                      <div className="summary-row total">
+                        <span>Total Amount:</span>
+                        <span>{formatCurrency(
+                          Array.isArray(parsedItems) ? 
+                            parsedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0) : 
+                            0
+                        )}</span>
+                      </div>
                     </div>
 
                     <div className="order-actions">

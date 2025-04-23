@@ -7,7 +7,6 @@ import pork from "../../assets/images/pork.png";
 import right from "../../assets/images/ArrowRight.png";
 import left from "../../assets/images/ArrowLeft.png";
 import "./Allergies.css";
-import Subscription from "../Subscription/Subscription";
 
 const foodItems = [
   { img: pork, recipeName: "Pork Satay, Grilled Pork", description: "Grilled pork with rice and veggies.", price: "560", category: "Gluten-Free" },
@@ -73,40 +72,37 @@ const Allergies = () => {
   };
 
   return (
-    <>
-      <div className="allergies-section">
-        <div className="allergies-types">
-          <h1>Allergies</h1>
-        </div>
-
-        <div className="btn-bar">
-          {["All", "Gluten-Free", "Nut-Free", "Dairy-Free"].map((category) => (
-            <button
-              key={category}
-              className={selectedCategory === category ? "active" : ""}
-              onClick={() => setSelectedCategory(category)}
-            >
-              {category}
-            </button>
-          ))}
-        </div>
-
-        <div className="slider-container">
-          <Slider {...settings}>
-            {filteredItems.map((item, index) => (
-              <FoodCard
-                key={index}
-                img={item.img}
-                recipeName={item.recipeName}
-                description={item.description}
-                price={item.price}
-              />
-            ))}
-          </Slider>
-        </div>
+    <div className="allergies-section">
+      <div className="allergies-types">
+        <h1>Allergies</h1>
       </div>
-      <Subscription />
-    </>
+
+      <div className="btn-bar">
+        {["All", "Gluten-Free", "Nut-Free", "Dairy-Free"].map((category) => (
+          <button
+            key={category}
+            className={selectedCategory === category ? "active" : ""}
+            onClick={() => setSelectedCategory(category)}
+          >
+            {category}
+          </button>
+        ))}
+      </div>
+
+      <div className="slider-container">
+        <Slider {...settings}>
+          {filteredItems.map((item, index) => (
+            <FoodCard
+              key={index}
+              img={item.img}
+              recipeName={item.recipeName}
+              description={item.description}
+              price={item.price}
+            />
+          ))}
+        </Slider>
+      </div>
+    </div>
   );
 };
 

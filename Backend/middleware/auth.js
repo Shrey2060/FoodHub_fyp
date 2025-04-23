@@ -14,15 +14,15 @@ const generateToken = (user) => {
         { 
             id: user.id, 
             email: user.email,
-            role: user.role,
-            name: user.name
+            name: user.name,
+            role: user.role
         }, 
         process.env.JWT_SECRET || 'your-secret-key',
-        { expiresIn: '24h' } // Token expires in 24 hours
+        { expiresIn: '24h' }
     );
 };
 
-const authenticateToken = (req, res, next) => {
+const authenticateToken = async (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
 
@@ -35,7 +35,22 @@ const authenticateToken = (req, res, next) => {
 
     try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
-        req.user = decoded;
+        
+        // Check if user exists in database
+        const [users] = await pool.query(
+            'SELECT id, name, email, role FROM users WHERE id = ?',
+            [decoded.id]
+        );
+
+        if (users.length === 0) {
+            return res.status(403).json({ 
+                success: false, 
+                message: 'User not found'
+            });
+        }
+
+        // Set user info from database to ensure it's current
+        req.user = users[0];
         next();
     } catch (error) {
         if (error.name === 'TokenExpiredError') {
@@ -53,27 +68,21 @@ const authenticateToken = (req, res, next) => {
 };
 
 const isAdmin = async (req, res, next) => {
-    try {
-        const [users] = await pool.query(
-            'SELECT role FROM users WHERE id = ?',
-            [req.user.id]
-        );
-
-        if (users.length === 0 || users[0].role !== 'admin') {
-            return res.status(403).json({ 
-                success: false, 
-                message: 'Access denied. Admin privileges required.'
-            });
-        }
-
-        next();
-    } catch (error) {
-        console.error('Error checking admin status:', error);
-        res.status(500).json({ 
+    if (!req.user) {
+        return res.status(403).json({ 
             success: false, 
-            message: 'Error verifying admin privileges'
+            message: 'User not authenticated'
         });
     }
+
+    if (req.user.role !== 'admin') {
+        return res.status(403).json({ 
+            success: false, 
+            message: 'Access denied. Admin privileges required.'
+        });
+    }
+
+    next();
 };
 
-module.exports = { generateToken, authenticateToken, isAdmin }; 
+module.exports = { generateToken, authenticateToken, isAdmin };

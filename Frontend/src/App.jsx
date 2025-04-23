@@ -28,11 +28,12 @@ import SubscriptionPage from "./components/SubscriptionPage/SubscriptionPage";
 import Invoice from "./components/Invoice/Invoice";
 import Chatbot from "./components/Chatbot";
 import AdminProtectedRoute from './components/AdminProtectedRoute/AdminProtectedRoute';
+import { AuthProvider } from './contexts/AuthContext';
 
 function App() {
   return (
-    <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-      <div className="app">
+    <Router>
+      <AuthProvider>
         <Toaster
           position="top-center"
           reverseOrder={false}
@@ -80,7 +81,7 @@ function App() {
             <Route path="/about" element={<MainLayout><About /></MainLayout>} />
             <Route path="/contact" element={<MainLayout><Contact /></MainLayout>} />
             <Route path="/subscriptionPage" element={<MainLayout><SubscriptionPage /></MainLayout>} />
-            <Route path="/invoice" element={<MainLayout><Invoice /></MainLayout>} />
+            <Route path="/payment/success" element={<MainLayout><Invoice /></MainLayout>} />
 
             {/* Protected User Routes */}
             <Route element={<ProtectedRoute />}>
@@ -103,7 +104,7 @@ function App() {
             <Route path="*" element={<MainLayout><NotFound /></MainLayout>} />
           </Routes>
         </main>
-      </div>
+      </AuthProvider>
     </Router>
   );
 }

@@ -37,6 +37,10 @@ const Subscription = () => {
     };
 
     const handleCancelSubscription = async () => {
+        if (!confirm('Are you sure you want to cancel your subscription?')) {
+            return;
+        }
+        
         try {
             const token = sessionStorage.getItem('authToken');
             if (!token) {
@@ -56,53 +60,37 @@ const Subscription = () => {
             }
         } catch (error) {
             console.error('Error cancelling subscription:', error);
-            toast.error('Failed to cancel subscription');
+            toast.error(error.response?.data?.message || 'Failed to cancel subscription');
         }
     };
 
     if (loading) {
-        return <div className="loading">Loading subscription status...</div>;
+        return null; // Don't show anything while loading
     }
 
     return (
-        <div className='sub-container'>
+        <div className="subscription-container">
             {activeSubscription ? (
-                <div className="active-subscription">
-                    <h3>Active Subscription</h3>
-                    <div className="subscription-details">
-                        <p><strong>Plan:</strong> {activeSubscription.plan_name}</p>
-                        <p><strong>Status:</strong> {activeSubscription.status}</p>
-                        <p><strong>Start Date:</strong> {new Date(activeSubscription.start_date).toLocaleDateString()}</p>
-                        <p><strong>Next Billing:</strong> {new Date(activeSubscription.next_billing_date).toLocaleDateString()}</p>
-                        <p><strong>Price:</strong> Rs. {activeSubscription.plan_price}</p>
-                        <div className="features">
-                            <strong>Features:</strong>
-                            <ul>
-                                {activeSubscription.features.map((feature, index) => (
-                                    <li key={index}>{feature}</li>
-                                ))}
-                            </ul>
-                        </div>
-                        <button 
-                            className="cancel-subscription" 
-                            onClick={handleCancelSubscription}
-                        >
-                            Cancel Subscription
-                        </button>
-                    </div>
+                <div className="active-subscription-badge">
+                    <span className="plan-name">{activeSubscription.plan_name}</span>
+                    <button 
+                        className="cancel-subscription-btn" 
+                        onClick={handleCancelSubscription}
+                        title="Cancel Subscription"
+                    >
+                        ✕
+                    </button>
                 </div>
             ) : (
-                <>
-                    <button className='subscription-btn' onClick={() => setShowModal(true)}>
-                        Subscribe Now
-                    </button>
-                    {showModal && (
-                        <SubscriptionPage 
-                            onClose={() => setShowModal(false)} 
-                            onSubscribe={fetchSubscription}
-                        />
-                    )}
-                </>
+                <button className='subscription-btn' onClick={() => setShowModal(true)}>
+                    Subscribe Now
+                </button>
+            )}
+            {showModal && (
+                <SubscriptionPage 
+                    onClose={() => setShowModal(false)} 
+                    onSubscribe={fetchSubscription}
+                />
             )}
         </div>
     );

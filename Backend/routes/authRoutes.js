@@ -26,6 +26,7 @@ const authenticateToken = (req, res, next) => {
     req.user = {
       id: decoded.id,
       name: decoded.name,
+      email: decoded.email,
       role: decoded.role
     };
     next();
@@ -112,6 +113,7 @@ router.post("/login", async (req, res) => {
       { 
         id: user.id, 
         name: user.name,
+        email: user.email,
         role: user.role
       },
       process.env.JWT_SECRET,
@@ -164,6 +166,7 @@ router.post("/refresh-token", async (req, res) => {
       { 
         id: user.id, 
         name: user.name,
+        email: user.email,
         role: user.role
       },
       process.env.JWT_SECRET,
@@ -180,14 +183,109 @@ router.post("/refresh-token", async (req, res) => {
   }
 });
 
-// Admin-only route
+// Admin-only route to fetch users
 router.get("/admin/users", authenticateToken, isAdmin, async (req, res) => {
   try {
-    const [results] = await db.query("SELECT id, name, email, role, created_at FROM users");
-    res.json({ success: true, users: results });
+    const connection = await db.promise();
+    await connection.beginTransaction();
+    
+    try {
+      // Set transaction isolation level to READ COMMITTED
+      await connection.query('SET TRANSACTION ISOLATION LEVEL READ COMMITTED');
+      
+      const [results] = await connection.query(`
+        SELECT 
+          u.id,
+          u.name,
+          u.email,
+          u.role,
+          u.created_at,
+          u.is_active,
+          COALESCE(rp.points_balance, 0) as reward_points,
+          CASE 
+            WHEN s.id IS NOT NULL THEN true 
+            ELSE false 
+          END as has_subscription
+        FROM users u
+        LEFT JOIN reward_points rp ON u.id = rp.user_id
+        LEFT JOIN subscriptions s ON u.id = s.user_id AND s.status = 'active'
+        ORDER BY u.created_at DESC
+      `);
+      
+      await connection.commit();
+      
+      console.log('Fetched users count:', results.length);
+      res.json({ 
+        success: true, 
+        users: results.map(user => ({
+          ...user,
+          is_active: Boolean(user.is_active),
+          has_subscription: Boolean(user.has_subscription)
+        }))
+      });
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    }
   } catch (err) {
     console.error("Error fetching users:", err);
     res.status(500).json({ success: false, message: "Database error." });
+  }
+});
+
+// Toggle user active status
+router.put("/admin/users/:id/toggle-status", authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const connection = await db.promise();
+    
+    // Check if user exists
+    const [user] = await connection.query(
+      'SELECT * FROM users WHERE id = ?',
+      [id]
+    );
+    
+    if (user.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+    
+    // Prevent self-deactivation
+    if (parseInt(id) === req.user.id) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot change your own active status'
+      });
+    }
+    
+    // Toggle the is_active status
+    await connection.query(
+      'UPDATE users SET is_active = NOT is_active WHERE id = ?',
+      [id]
+    );
+    
+    // Get the updated user status
+    const [updatedUser] = await connection.query(
+      'SELECT id, name, email, role, is_active FROM users WHERE id = ?',
+      [id]
+    );
+    
+    res.json({
+      success: true,
+      message: `User ${updatedUser[0].is_active ? 'activated' : 'deactivated'} successfully`,
+      user: {
+        ...updatedUser[0],
+        is_active: Boolean(updatedUser[0].is_active)
+      }
+    });
+  } catch (error) {
+    console.error('Error toggling user status:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update user status'
+    });
   }
 });
 
@@ -423,6 +521,125 @@ router.post('/verify-token', authenticateToken, (req, res) => {
             role: req.user.role
         }
     });
+});
+
+// Admin: Delete user and all related data
+router.delete('/admin/delete-user/:id', authenticateToken, isAdmin, async (req, res) => {
+    console.log('Starting user deletion process...');
+    const connection = await db.getConnection();
+    
+    try {
+        await connection.beginTransaction();
+        console.log('Transaction started');
+
+        const { id } = req.params;
+        console.log('Attempting to delete user:', id);
+
+        // Check if user exists
+        const [userCheck] = await connection.query(
+            'SELECT * FROM users WHERE id = ?',
+            [id]
+        );
+        
+        if (userCheck.length === 0) {
+            console.log('User not found:', id);
+            await connection.rollback();
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+
+        console.log('User found:', userCheck[0].email);
+
+        // Prevent self-deletion
+        if (parseInt(id) === req.user.id) {
+            console.log('Self-deletion attempted');
+            await connection.rollback();
+            return res.status(400).json({
+                success: false,
+                message: 'Cannot delete your own account'
+            });
+        }
+
+        // Delete all related data in order
+        console.log('Deleting related data...');
+
+        // 1. Delete reward points
+        const [rewardResult] = await connection.query('DELETE FROM reward_points WHERE user_id = ?', [id]);
+        console.log('Deleted reward points:', rewardResult.affectedRows);
+
+        // 2. Delete cart items
+        const [cartResult] = await connection.query('DELETE FROM Cart WHERE user_id = ?', [id]);
+        console.log('Deleted cart items:', cartResult.affectedRows);
+
+        // 3. Delete notifications
+        const [notifResult] = await connection.query('DELETE FROM notifications WHERE user_id = ?', [id]);
+        console.log('Deleted notifications:', notifResult.affectedRows);
+
+        // 4. Delete orders and order items
+        const [orders] = await connection.query('SELECT id FROM orders WHERE user_id = ?', [id]);
+        console.log('Found orders to delete:', orders.length);
+        
+        for (const order of orders) {
+            const [itemsResult] = await connection.query('DELETE FROM order_items WHERE order_id = ?', [order.id]);
+            console.log(`Deleted order items for order ${order.id}:`, itemsResult.affectedRows);
+        }
+        
+        const [ordersResult] = await connection.query('DELETE FROM orders WHERE user_id = ?', [id]);
+        console.log('Deleted orders:', ordersResult.affectedRows);
+
+        // 5. Delete pre-orders and pre-order items
+        const [preOrders] = await connection.query('SELECT id FROM pre_orders WHERE user_id = ?', [id]);
+        console.log('Found pre-orders to delete:', preOrders.length);
+        
+        for (const preOrder of preOrders) {
+            const [preItemsResult] = await connection.query(
+                'DELETE FROM pre_order_items WHERE pre_order_id = ?', 
+                [preOrder.id]
+            );
+            console.log(`Deleted pre-order items for pre-order ${preOrder.id}:`, preItemsResult.affectedRows);
+        }
+        
+        const [preOrdersResult] = await connection.query('DELETE FROM pre_orders WHERE user_id = ?', [id]);
+        console.log('Deleted pre-orders:', preOrdersResult.affectedRows);
+
+        // 6. Delete subscriptions
+        const [subsResult] = await connection.query('DELETE FROM subscriptions WHERE user_id = ?', [id]);
+        console.log('Deleted subscriptions:', subsResult.affectedRows);
+
+        // 7. Finally, delete the user
+        const [userResult] = await connection.query('DELETE FROM users WHERE id = ?', [id]);
+        console.log('Deleted user:', userResult.affectedRows);
+
+        if (userResult.affectedRows === 0) {
+            console.log('Failed to delete user');
+            await connection.rollback();
+            return res.status(500).json({
+                success: false,
+                message: 'Failed to delete user'
+            });
+        }
+
+        await connection.commit();
+        console.log('Transaction committed successfully');
+
+        res.json({
+            success: true,
+            message: 'User and all related data deleted successfully'
+        });
+    } catch (error) {
+        console.error('Error during user deletion:', error);
+        await connection.rollback();
+        res.status(500).json({
+            success: false,
+            message: 'Failed to delete user',
+            error: error.message
+        });
+    } finally {
+        connection.release();
+        console.log('Database connection released');
+    }
 });
 
 module.exports = router;

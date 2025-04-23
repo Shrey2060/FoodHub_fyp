@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'react-toastify';
 import { getStatusColor } from '../utils/statusUtils';
+import RestaurantWallet from '../components/RestaurantWallet/RestaurantWallet';
 import './AdminDashboard.css';
 
 const AdminDashboard = () => {
@@ -14,6 +15,7 @@ const AdminDashboard = () => {
     const [preOrders, setPreOrders] = useState([]);
     const [loading, setLoading] = useState(true);
     const [orderFilter, setOrderFilter] = useState('all');
+    const [filteredOrders, setFilteredOrders] = useState([]);
     const navigate = useNavigate();
     const [error, setError] = useState('');
     const [selectedProduct, setSelectedProduct] = useState(null);
@@ -65,6 +67,15 @@ const AdminDashboard = () => {
 
     // Add state for subscription management
     const [userSubscriptions, setUserSubscriptions] = useState({});
+
+    // Add state for save confirmation dialog
+    const [saveConfirmationDialog, setSaveConfirmationDialog] = useState({
+        isOpen: false,
+        orderId: null,
+        orderData: null
+    });
+
+    const [isAddingUser, setIsAddingUser] = useState(false);
 
     // Helper function to format currency in Nepali Rupees
     const formatCurrency = (amount) => {
@@ -166,6 +177,14 @@ const AdminDashboard = () => {
         }
     }, [activeTab]);
 
+    useEffect(() => {
+        if (orderFilter === 'all') {
+            setFilteredOrders(orders);
+        } else {
+            setFilteredOrders(orders.filter(order => order.status === orderFilter));
+        }
+    }, [orders, orderFilter]);
+
     const fetchData = async () => {
         try {
             const token = sessionStorage.getItem('authToken');
@@ -193,7 +212,7 @@ const AdminDashboard = () => {
                 setUsers(response.data.users || []);
                 
                 // Fetch subscriptions for each user
-                const subsResponse = await axios.get('http://localhost:5000/api/subscription/admin/subscriptions', { headers });
+                const subsResponse = await axios.get('http://localhost:5000/api/subscriptions/admin/subscriptions', { headers });
                 console.log('Subscriptions response:', subsResponse.data);
                 
                 if (subsResponse.data.success) {
@@ -205,15 +224,36 @@ const AdminDashboard = () => {
                     setSubscriptions(subsResponse.data.subscriptions);
                 }
             } else if (activeTab === 'subscriptions') {
-                const response = await axios.get('http://localhost:5000/api/subscriptions/admin/subscriptions', { headers });
-                console.log('Subscriptions response:', response.data);
-                if (response.data.success) {
-                    setSubscriptions(response.data.subscriptions);
+                console.log('Fetching admin subscriptions...');
+                console.log('Using token:', token);
+                
+                try {
+                    const response = await axios.get('http://localhost:5000/api/subscriptions/admin/subscriptions', { headers });
+                    console.log('Full admin subscriptions response:', response);
+                    console.log('Admin subscriptions response data:', response.data);
+                    
+                    if (response.data.success) {
+                        console.log('Setting subscriptions state with:', response.data.subscriptions);
+                        if (Array.isArray(response.data.subscriptions)) {
+                            setSubscriptions(response.data.subscriptions);
+                            console.log('Subscriptions state set successfully:', response.data.subscriptions.length);
+                        } else {
+                            console.error('Subscriptions data is not an array:', response.data.subscriptions);
+                            setSubscriptions([]);
+                        }
+                    } else {
+                        console.error('Failed to fetch subscriptions - success is false:', response.data);
+                        toast.error('Failed to fetch subscriptions');
+                    }
+                } catch (subscriptionError) {
+                    console.error('Error in subscription fetch:', subscriptionError);
+                    console.error('Error details:', subscriptionError.response?.data || 'No response data');
+                    toast.error('Failed to fetch subscriptions: ' + (subscriptionError.message || 'Unknown error'));
                 }
             }
         } catch (error) {
-            console.error('Error fetching data:', error);
-            toast.error('Failed to fetch data');
+            console.error('Error fetching data:', error.response || error);
+            toast.error(error.response?.data?.message || 'Failed to fetch data');
         } finally {
             setLoading(false);
         }
@@ -415,28 +455,40 @@ const AdminDashboard = () => {
         }
     };
 
-    const cancelSubscription = async (subscriptionId) => {
+    const handleCancelSubscription = async (subscriptionId) => {
         if (window.confirm('Are you sure you want to cancel this subscription?')) {
             try {
                 const token = sessionStorage.getItem('authToken');
                 await axios.put(
-                    `http://localhost:5000/api/admin/subscriptions/${subscriptionId}/cancel`,
+                    `http://localhost:5000/api/subscriptions/admin/${subscriptionId}/cancel`,
                     {},
                     { headers: { Authorization: `Bearer ${token}` } }
                 );
                 toast.success('Subscription cancelled successfully');
                 fetchData();
             } catch (error) {
-                toast.error('Failed to cancel subscription');
                 console.error('Error cancelling subscription:', error);
+                toast.error(error.response?.data?.message || 'Failed to cancel subscription');
             }
         }
     };
 
-    const filteredOrders = orders.filter(order => {
-        if (orderFilter === 'all') return true;
-        return order.status === orderFilter;
-    });
+    const handleDeleteSubscription = async (subscriptionId) => {
+        if (window.confirm('Are you sure you want to delete this subscription? This action cannot be undone.')) {
+            try {
+                const token = sessionStorage.getItem('authToken');
+                await axios.delete(
+                    `http://localhost:5000/api/subscriptions/admin/${subscriptionId}`,
+                    { headers: { Authorization: `Bearer ${token}` } }
+                );
+                toast.success('Subscription deleted successfully');
+                fetchData();
+            } catch (error) {
+                console.error('Error deleting subscription:', error);
+                toast.error(error.response?.data?.message || 'Failed to delete subscription');
+            }
+        }
+    };
 
     const handleOrderEdit = (order) => {
         setSelectedOrder(order);
@@ -451,14 +503,149 @@ const AdminDashboard = () => {
 
     const handleOrderUpdate = async (e) => {
         e.preventDefault();
+        setSaveConfirmationDialog({
+            isOpen: true,
+            orderId: selectedOrder.id,
+            orderData: orderFormData
+        });
+    };
+
+    const SaveConfirmationDialog = () => {
+        if (!saveConfirmationDialog.isOpen) return null;
+
+        const handleConfirmClick = async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            // Close dialog immediately before the API call
+            setSaveConfirmationDialog({
+                isOpen: false,
+                orderId: null,
+                orderData: null
+            });
+            await confirmOrderUpdate();
+        };
+
+        const confirmOrderUpdate = async () => {
+            try {
+                const token = sessionStorage.getItem('authToken');
+                if (!token) {
+                    toast.error('Authentication required');
+                    return;
+                }
+
+                const response = await axios.put(
+                    `http://localhost:5000/api/admin/orders/${saveConfirmationDialog.orderId}`,
+                    saveConfirmationDialog.orderData,
+                    {
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Content-Type': 'application/json'
+                        }
+                    }
+                );
+
+                if (response.data.success) {
+                    // Reset form and selected order
+                    setSelectedOrder(null);
+                    setOrderFormData({
+                        status: '',
+                        contact_number: '',
+                        payment_method: '',
+                        delivery_address: '',
+                        payment_status: ''
+                    });
+                    
+                    // Show success message and refresh orders
+                    toast.success('Order updated successfully');
+                    await fetchOrders();
+                } else {
+                    toast.error(response.data.message || 'Failed to update order');
+                }
+            } catch (error) {
+                console.error('Error updating order:', error);
+                toast.error(error.response?.data?.message || 'Failed to update order');
+            }
+        };
+
+        const handleCancelClick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setSaveConfirmationDialog({
+                isOpen: false,
+                orderId: null,
+                orderData: null
+            });
+        };
+
+        return (
+            <div className="dialog-overlay" onClick={handleCancelClick}>
+                <div className="dialog-content" onClick={e => e.stopPropagation()}>
+                    <div className="dialog-header">
+                        <h2>Confirm Order Update</h2>
+                        <button 
+                            className="close-button"
+                            onClick={handleCancelClick}
+                            type="button"
+                        >
+                            ×
+                        </button>
+                    </div>
+                    
+                    <div className="dialog-body">
+                        <div className="order-info">
+                            <p className="order-id">Order #{saveConfirmationDialog.orderId}</p>
+                            <div className="changes-summary">
+                                <h3>Changes Summary</h3>
+                                <div className="changes-list">
+                                    <div className="change-item">
+                                        <span className="change-label">Status:</span>
+                                        <span className="change-value">{saveConfirmationDialog.orderData.status}</span>
+                                    </div>
+                                    <div className="change-item">
+                                        <span className="change-label">Contact Number:</span>
+                                        <span className="change-value">{saveConfirmationDialog.orderData.contact_number}</span>
+                                    </div>
+                                    <div className="change-item">
+                                        <span className="change-label">Payment Method:</span>
+                                        <span className="change-value">{saveConfirmationDialog.orderData.payment_method}</span>
+                                    </div>
+                                    <div className="change-item">
+                                        <span className="change-label">Delivery Address:</span>
+                                        <span className="change-value">{saveConfirmationDialog.orderData.delivery_address}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="dialog-footer">
+                        <button 
+                            className="dialog-button cancel"
+                            onClick={handleCancelClick}
+                            type="button"
+                        >
+                            Cancel
+                        </button>
+                        <button 
+                            className="dialog-button save"
+                            onClick={handleConfirmClick}
+                            type="button"
+                        >
+                            Confirm Changes
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
+    const handleUserCreate = async (e) => {
+        e.preventDefault();
         try {
             const token = sessionStorage.getItem('authToken');
-            const response = await axios.put(
-                `http://localhost:5000/api/admin/orders/${selectedOrder.id}`,
-                {
-                    ...orderFormData,
-                    order_id: selectedOrder.id
-                },
+            const response = await axios.post(
+                'http://localhost:5000/api/auth/admin/create-user',
+                userFormData,
                 {
                     headers: {
                         'Authorization': `Bearer ${token}`,
@@ -468,110 +655,59 @@ const AdminDashboard = () => {
             );
 
             if (response.data.success) {
-                toast.success('Order updated successfully');
-                setSelectedOrder(null);
-                setOrderFormData({
-                    status: '',
-                    contact_number: '',
-                    payment_method: '',
-                    delivery_address: '',
-                    payment_status: ''
+                toast.success('User created successfully');
+                setIsAddingUser(false);
+                setUserFormData({
+                    name: '',
+                    email: '',
+                    role: '',
+                    password: ''
                 });
-                await fetchOrders();
+                // Refresh users list
+                const usersResponse = await axios.get('http://localhost:5000/api/auth/admin/users', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                if (usersResponse.data.success) {
+                    setUsers(usersResponse.data.users);
+                }
             } else {
-                toast.error(response.data.message || 'Failed to update order');
+                toast.error(response.data.message || 'Failed to create user');
             }
         } catch (error) {
-            console.error('Error updating order:', error);
-            toast.error(error.response?.data?.message || 'Failed to update order');
+            console.error('Error creating user:', error);
+            toast.error(error.response?.data?.message || 'Failed to create user');
         }
-    };
-
-    const handleOrderDelete = async (order) => {
-        if (!order || !order.id) {
-            toast.error('Invalid order selected');
-            return;
-        }
-        
-        setDeleteDialog({
-            isOpen: true,
-            orderId: order.id,
-            orderDetails: order
-        });
-    };
-
-    const handleOrderFormChange = (e) => {
-        const { name, value } = e.target;
-        setOrderFormData(prev => ({
-            ...prev,
-            [name]: value
-        }));
-    };
-
-    const DeleteConfirmationDialog = () => {
-        if (!deleteDialog.isOpen) return null;
-
-        return (
-            <div className="dialog-overlay">
-                <div className="dialog-content">
-                    <h2>Delete Order</h2>
-                    <p>Are you sure you want to delete Order #{deleteDialog.orderId}?</p>
-                    {deleteDialog.orderDetails && (
-                        <div className="order-summary">
-                            <p><strong>Status:</strong> {deleteDialog.orderDetails.status}</p>
-                            <p><strong>Payment Method:</strong> {deleteDialog.orderDetails.payment_method}</p>
-                            <p><strong>Total Amount:</strong> {formatCurrency(deleteDialog.orderDetails.total_amount)}</p>
-                        </div>
-                    )}
-                    <p className="warning-text">This action cannot be undone!</p>
-                    <div className="dialog-buttons">
-                        <button 
-                            className="dialog-button cancel"
-                            onClick={() => setDeleteDialog({ isOpen: false, orderId: null, orderDetails: null })}
-                        >
-                            Cancel
-                        </button>
-                        <button 
-                            className="dialog-button delete"
-                            onClick={confirmDelete}
-                        >
-                            Delete
-                        </button>
-                    </div>
-                </div>
-            </div>
-        );
-    };
-
-    const handleUserEdit = (user) => {
-        setEditingUser(user);
-        setUserFormData({
-            name: user.name,
-            email: user.email,
-            role: user.role,
-            password: '' // Password field will be empty when editing
-        });
-    };
-
-    const handleUserFormChange = (e) => {
-        const { name, value } = e.target;
-        setUserFormData(prev => ({
-            ...prev,
-            [name]: value
-        }));
     };
 
     const handleUserUpdate = async (e) => {
         e.preventDefault();
         try {
             const token = sessionStorage.getItem('authToken');
+            if (!token) {
+                toast.error('Authentication required');
+                return;
+            }
+
+            console.log('Updating user with data:', {
+                userId: editingUser.id,
+                updates: {
+                    name: userFormData.name,
+                    email: userFormData.email,
+                    role: userFormData.role,
+                    ...(userFormData.password && { password: userFormData.password })
+                }
+            });
+
             const response = await axios.put(
-                `http://localhost:5000/api/admin/edit-user/${editingUser.id}`,
+                `http://localhost:5000/api/auth/admin/edit-user/${editingUser.id}`,
                 {
                     name: userFormData.name,
                     email: userFormData.email,
                     role: userFormData.role,
-                    password: userFormData.password || undefined // Only send password if it's not empty
+                    ...(userFormData.password && { password: userFormData.password })
                 },
                 {
                     headers: {
@@ -590,16 +726,7 @@ const AdminDashboard = () => {
                     role: '',
                     password: ''
                 });
-                // Refresh the users list
-                const usersResponse = await axios.get('http://localhost:5000/api/admin/users', {
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json'
-                    }
-                });
-                if (usersResponse.data.success) {
-                    setUsers(usersResponse.data.users);
-                }
+                await fetchUsers();
             } else {
                 toast.error(response.data.message || 'Failed to update user');
             }
@@ -607,6 +734,25 @@ const AdminDashboard = () => {
             console.error('Error updating user:', error);
             toast.error(error.response?.data?.message || 'Failed to update user');
         }
+    };
+
+    const handleUserFormChange = (e) => {
+        const { name, value } = e.target;
+        setUserFormData(prev => ({
+            ...prev,
+            [name]: value
+        }));
+    };
+
+    const handleUserEdit = (user) => {
+        setEditingUser(user);
+        setIsAddingUser(false);
+        setUserFormData({
+            name: user.name,
+            email: user.email,
+            role: user.role,
+            password: '' // Password field will be empty when editing
+        });
     };
 
     const handleUserDelete = (user) => {
@@ -617,65 +763,153 @@ const AdminDashboard = () => {
         });
     };
 
-    const confirmUserDelete = async () => {
+    // Add a separate function to fetch users
+    const fetchUsers = async () => {
         try {
             const token = sessionStorage.getItem('authToken');
-            const response = await axios.delete(
-                `http://localhost:5000/api/admin/users/${userDeleteDialog.userId}`,
-                {
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json'
-                    }
+            if (!token) {
+                toast.error('Authentication required');
+                return;
+            }
+
+            const response = await axios.get('http://localhost:5000/api/auth/admin/users', {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
                 }
-            );
+            });
 
             if (response.data.success) {
-                toast.success('User deleted successfully');
-                setUsers(prevUsers => 
-                    prevUsers.filter(user => user.id !== userDeleteDialog.userId)
-                );
+                setUsers(response.data.users);
             } else {
-                toast.error(response.data.message || 'Failed to delete user');
+                toast.error('Failed to fetch users');
             }
         } catch (error) {
-            console.error('Error deleting user:', error);
-            toast.error(error.response?.data?.message || 'Failed to delete user');
-        } finally {
-            setUserDeleteDialog({
-                isOpen: false,
-                userId: null,
-                userDetails: null
-            });
+            console.error('Error fetching users:', error);
+            toast.error('Failed to fetch users');
         }
     };
 
     const UserDeleteConfirmationDialog = () => {
         if (!userDeleteDialog.isOpen) return null;
 
+        const handleConfirmDelete = async () => {
+            try {
+                const token = sessionStorage.getItem('authToken');
+                if (!token) {
+                    throw new Error('Authentication required');
+                }
+
+                console.log('Starting user deletion process...');
+                console.log('User ID to delete:', userDeleteDialog.userId);
+                console.log('User details:', userDeleteDialog.userDetails);
+
+                // Use the correct delete endpoint
+                const deleteEndpoint = `http://localhost:5000/api/auth/admin/delete-user/${userDeleteDialog.userId}`;
+                console.log('Sending delete request to:', deleteEndpoint);
+
+                const response = await axios.delete(
+                    deleteEndpoint,
+                    {
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Content-Type': 'application/json'
+                        }
+                    }
+                );
+
+                console.log('Delete response:', response);
+
+                if (response.data && response.data.success) {
+                    console.log('User deletion successful');
+                    
+                    // Update local state
+                    setUsers(prevUsers => {
+                        const updatedUsers = prevUsers.filter(user => user.id !== userDeleteDialog.userId);
+                        console.log('Updated users list:', updatedUsers);
+                        return updatedUsers;
+                    });
+                    
+                    // Close the dialog
+                    setUserDeleteDialog({
+                        isOpen: false,
+                        userId: null,
+                        userDetails: null
+                    });
+                    
+                    // Refresh the users list
+                    await fetchUsers();
+                    console.log('Users list refreshed after deletion');
+                    
+                    toast.success(`User ${userDeleteDialog.userDetails?.name || userDeleteDialog.userId} deleted successfully`);
+                } else {
+                    throw new Error(response.data?.message || 'Failed to delete user');
+                }
+            } catch (error) {
+                console.error('Detailed error information:', {
+                    message: error.message,
+                    response: error.response?.data,
+                    status: error.response?.status,
+                    statusText: error.response?.statusText,
+                    endpoint: deleteEndpoint
+                });
+
+                if (error.response?.status === 403) {
+                    toast.error('You do not have permission to delete this user');
+                } else if (error.response?.status === 404) {
+                    toast.error('User not found in database');
+                } else if (error.response?.status === 401) {
+                    toast.error('Authentication failed. Please log in again.');
+                } else {
+                    toast.error(
+                        error.response?.data?.message || 
+                        `Failed to permanently delete user ${userDeleteDialog.userDetails?.name || userDeleteDialog.userId}`
+                    );
+                }
+            }
+        };
+
         return (
             <div className="dialog-overlay">
                 <div className="dialog-content">
-                    <h2>Delete User</h2>
-                    <p>Are you sure you want to delete this user?</p>
-                    {userDeleteDialog.userDetails && (
-                        <div className="user-summary">
-                            <p><strong>Name:</strong> {userDeleteDialog.userDetails.name}</p>
-                            <p><strong>Email:</strong> {userDeleteDialog.userDetails.email}</p>
-                            <p><strong>Role:</strong> {userDeleteDialog.userDetails.role}</p>
-                        </div>
-                    )}
-                    <p className="warning-text">This action cannot be undone!</p>
-                    <div className="dialog-buttons">
+                    <div className="dialog-header">
+                        <h2>Delete User</h2>
+                        <button 
+                            className="close-button"
+                            onClick={() => setUserDeleteDialog({
+                                isOpen: false,
+                                userId: null,
+                                userDetails: null
+                            })}
+                        >
+                            ×
+                        </button>
+                    </div>
+                    <div className="dialog-body">
+                        <p>Are you sure you want to delete this user?</p>
+                        {userDeleteDialog.userDetails && (
+                            <div className="user-summary">
+                                <p><strong>Name:</strong> {userDeleteDialog.userDetails.name}</p>
+                                <p><strong>Email:</strong> {userDeleteDialog.userDetails.email}</p>
+                                <p><strong>Role:</strong> {userDeleteDialog.userDetails.role}</p>
+                            </div>
+                        )}
+                        <p className="warning-text">This action cannot be undone!</p>
+                    </div>
+                    <div className="dialog-footer">
                         <button 
                             className="dialog-button cancel"
-                            onClick={() => setUserDeleteDialog({ isOpen: false, userId: null, userDetails: null })}
+                            onClick={() => setUserDeleteDialog({
+                                isOpen: false,
+                                userId: null,
+                                userDetails: null
+                            })}
                         >
                             Cancel
                         </button>
                         <button 
                             className="dialog-button delete"
-                            onClick={confirmUserDelete}
+                            onClick={handleConfirmDelete}
                         >
                             Delete
                         </button>
@@ -685,157 +919,144 @@ const AdminDashboard = () => {
         );
     };
 
-    const formatDate = (dateString) => {
-        return new Date(dateString).toLocaleDateString('en-US', {
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
-        });
-    };
+    const DeleteConfirmationDialog = () => {
+        if (!deleteDialog.isOpen) return null;
 
-    const handleCancelSubscription = async (subscriptionId) => {
-        if (!subscriptionId) {
-            toast.error('Invalid subscription ID');
-            return;
-        }
-
-        try {
-            const token = sessionStorage.getItem('authToken');
-            if (!token) {
-                toast.error('Authentication required');
-                return;
-            }
-
-            console.log('Cancelling subscription with ID:', subscriptionId);
-
-            const response = await axios.put(
-                `http://localhost:5000/api/subscriptions/admin/${subscriptionId}/cancel`,
-                {},
-                {
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json'
-                    }
+        const handleConfirmDelete = async () => {
+            try {
+                const token = sessionStorage.getItem('authToken');
+                if (!token) {
+                    throw new Error('Authentication required');
                 }
-            );
 
-            if (response.data.success) {
-                toast.success('Subscription cancelled successfully');
-                fetchData(); // Refresh the subscriptions list
-            } else {
-                toast.error(response.data.message || 'Failed to cancel subscription');
-            }
-        } catch (error) {
-            console.error('Error cancelling subscription:', error);
-            toast.error(error.response?.data?.message || 'Failed to cancel subscription');
-        }
-    };
+                console.log('Starting deletion process...');
+                console.log('ID to delete:', deleteDialog.orderId);
+                console.log('Details:', deleteDialog.orderDetails);
 
-    const handleDeleteSubscription = async (subscriptionId) => {
-        if (!subscriptionId) {
-            toast.error('Invalid subscription ID');
-            return;
-        }
-
-        try {
-            const token = sessionStorage.getItem('authToken');
-            if (!token) {
-                toast.error('Authentication required');
-                return;
-            }
-
-            console.log('Deleting subscription with ID:', subscriptionId);
-
-            const response = await axios.delete(
-                `http://localhost:5000/api/subscriptions/admin/${subscriptionId}`,
-                {
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json'
-                    }
+                // Use the correct delete endpoint based on the active tab
+                let deleteEndpoint;
+                if (activeTab === 'products') {
+                    deleteEndpoint = `http://localhost:5000/api/admin/products/${deleteDialog.orderId}`;
+                } else if (activeTab === 'orders') {
+                    deleteEndpoint = `http://localhost:5000/api/admin/orders/${deleteDialog.orderId}`;
+                } else if (activeTab === 'pre-orders') {
+                    deleteEndpoint = `http://localhost:5000/api/admin/pre-orders/${deleteDialog.orderId}`;
                 }
-            );
 
-            if (response.data.success) {
-                toast.success('Subscription deleted successfully');
-                // Update the subscriptions list directly
-                setSubscriptions(prevSubscriptions => 
-                    prevSubscriptions.filter(sub => sub.id !== subscriptionId)
+                console.log('Sending delete request to:', deleteEndpoint);
+
+                const response = await axios.delete(
+                    deleteEndpoint,
+                    {
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Content-Type': 'application/json'
+                        }
+                    }
                 );
-            } else {
-                toast.error(response.data.message || 'Failed to delete subscription');
-            }
-        } catch (error) {
-            console.error('Error deleting subscription:', error);
-            toast.error(error.response?.data?.message || 'Failed to delete subscription');
-        }
-    };
 
-    const handleUpdatePreOrderStatus = async (orderId, newStatus) => {
-        try {
-            const token = sessionStorage.getItem('authToken');
-            if (!token) {
-                toast.error('Authentication required');
-                return;
-            }
+                console.log('Delete response:', response);
 
-            const response = await axios.patch(
-                `http://localhost:5000/api/pre-orders/${orderId}/status`,
-                { status: newStatus },
-                {
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json'
+                if (response.data && response.data.success) {
+                    console.log('Deletion successful');
+                    
+                    // Update local state based on active tab
+                    if (activeTab === 'products') {
+                        setProducts(prevProducts => prevProducts.filter(product => product.id !== deleteDialog.orderId));
+                    } else if (activeTab === 'orders') {
+                        setOrders(prevOrders => prevOrders.filter(order => order.id !== deleteDialog.orderId));
+                    } else if (activeTab === 'pre-orders') {
+                        setPreOrders(prevPreOrders => prevPreOrders.filter(order => order.id !== deleteDialog.orderId));
                     }
+                    
+                    // Close the dialog
+                    setDeleteDialog({
+                        isOpen: false,
+                        orderId: null,
+                        orderDetails: null
+                    });
+                    
+                    // Refresh the data
+                    await fetchData();
+                    console.log('Data refreshed after deletion');
+                    
+                    toast.success('Item deleted successfully');
+                } else {
+                    throw new Error(response.data?.message || 'Failed to delete item');
                 }
-            );
+            } catch (error) {
+                console.error('Detailed error information:', {
+                    message: error.message,
+                    response: error.response?.data,
+                    status: error.response?.status,
+                    statusText: error.response?.statusText
+                });
 
-            if (response.data.success) {
-                toast.success(`Status updated to ${newStatus}`);
-                fetchPreOrders();
-            } else {
-                toast.error(response.data.message || 'Failed to update status');
-            }
-        } catch (error) {
-            console.error('Error updating pre-order status:', error);
-            toast.error(error.response?.data?.message || 'Failed to update status');
-        }
-    };
-
-    const handleDeletePreOrder = async (orderId) => {
-        if (!orderId) {
-            toast.error('Invalid pre-order ID');
-            return;
-        }
-
-        try {
-            const token = sessionStorage.getItem('authToken');
-            if (!token) {
-                toast.error('Authentication required');
-                return;
-            }
-
-            console.log('Deleting pre-order with ID:', orderId); // Debug log
-
-            const response = await axios.delete(`http://localhost:5000/api/pre-orders/admin/${orderId}`, {
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
+                if (error.response?.status === 403) {
+                    toast.error('You do not have permission to delete this item');
+                } else if (error.response?.status === 404) {
+                    toast.error('Item not found in database');
+                } else if (error.response?.status === 401) {
+                    toast.error('Authentication failed. Please log in again.');
+                } else {
+                    toast.error(error.response?.data?.message || 'Failed to delete item');
                 }
-            });
-
-            if (response.data.success) {
-                toast.success('Pre-order deleted successfully');
-                fetchPreOrders();
-            } else {
-                toast.error(response.data.message || 'Failed to delete pre-order');
             }
-        } catch (error) {
-            console.error('Error deleting pre-order:', error);
-            toast.error(error.response?.data?.message || 'Failed to delete pre-order');
-        }
+        };
+
+        return (
+            <div className="dialog-overlay">
+                <div className="dialog-content">
+                    <div className="dialog-header">
+                        <h2>Delete {activeTab === 'products' ? 'Product' : 'Order'}</h2>
+                        <button 
+                            className="close-button"
+                            onClick={() => setDeleteDialog({
+                                isOpen: false,
+                                orderId: null,
+                                orderDetails: null
+                            })}
+                        >
+                            ×
+                        </button>
+                    </div>
+                    <div className="dialog-body">
+                        <p>Are you sure you want to delete this {activeTab === 'products' ? 'product' : 'order'}?</p>
+                        {deleteDialog.orderDetails && (
+                            <div className="item-summary">
+                                {activeTab === 'products' ? (
+                                    <p><strong>Name:</strong> {deleteDialog.orderDetails.name}</p>
+                                ) : (
+                                    <>
+                                        <p><strong>Order ID:</strong> {deleteDialog.orderId}</p>
+                                        <p><strong>Status:</strong> {deleteDialog.orderDetails.status}</p>
+                                    </>
+                                )}
+                            </div>
+                        )}
+                        <p className="warning-text">This action cannot be undone!</p>
+                    </div>
+                    <div className="dialog-footer">
+                        <button 
+                            className="dialog-button cancel"
+                            onClick={() => setDeleteDialog({
+                                isOpen: false,
+                                orderId: null,
+                                orderDetails: null
+                            })}
+                        >
+                            Cancel
+                        </button>
+                        <button 
+                            className="dialog-button delete"
+                            onClick={handleConfirmDelete}
+                        >
+                            Delete
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
     };
 
     if (loading) {
@@ -873,6 +1094,12 @@ const AdminDashboard = () => {
                 <button className={`nav-button ${activeTab === 'pre-orders' ? 'active' : ''}`} onClick={() => setActiveTab('pre-orders')}>Pre-Orders</button>
                 <button className={`nav-button ${activeTab === 'users' ? 'active' : ''}`} onClick={() => setActiveTab('users')}>Users</button>
                 <button className={`nav-button ${activeTab === 'subscriptions' ? 'active' : ''}`} onClick={() => setActiveTab('subscriptions')}>Subscriptions</button>
+                <button 
+                    className={`nav-button ${activeTab === 'wallet' ? 'active' : ''}`} 
+                    onClick={() => setActiveTab('wallet')}
+                >
+                    Wallet
+                </button>
             </nav>
 
             <main className="admin-content">
@@ -1109,75 +1336,81 @@ const AdminDashboard = () => {
                         
                         {/* Order Edit Form */}
                         {selectedOrder && (
-                            <form onSubmit={handleOrderUpdate} className="order-form">
-                                <h3>Edit Order #{selectedOrder.id}</h3>
-                                <div className="form-group">
-                                    <label>Status:</label>
-                                    <select
-                                        name="status"
-                                        value={orderFormData.status}
-                                        onChange={(e) => setOrderFormData({...orderFormData, status: e.target.value})}
-                                        required
-                                    >
-                                        <option value="pending">Pending</option>
-                                        <option value="processing">Processing</option>
-                                        <option value="completed">Completed</option>
-                                        <option value="cancelled">Cancelled</option>
-                                    </select>
-                                </div>
-                                <div className="form-group">
-                                    <label>Contact Number:</label>
-                                    <input
-                                        type="text"
-                                        name="contact_number"
-                                        value={orderFormData.contact_number}
-                                        onChange={(e) => setOrderFormData({...orderFormData, contact_number: e.target.value})}
-                                        required
-                                    />
-                                </div>
-                                <div className="form-group">
-                                    <label>Payment Method:</label>
-                                    <select
-                                        name="payment_method"
-                                        value={orderFormData.payment_method}
-                                        onChange={(e) => setOrderFormData({...orderFormData, payment_method: e.target.value})}
-                                        required
-                                    >
-                                        <option value="">Select Payment Method</option>
-                                        <option value="cash">Cash</option>
-                                        <option value="card">Card</option>
-                                        <option value="khalti">Khalti</option>
-                                    </select>
-                                </div>
-                                <div className="form-group">
-                                    <label>Delivery Address:</label>
-                                    <textarea
-                                        name="delivery_address"
-                                        value={orderFormData.delivery_address}
-                                        onChange={(e) => setOrderFormData({...orderFormData, delivery_address: e.target.value})}
-                                        required
-                                    />
-                                </div>
-                                <div className="form-actions">
-                                    <button type="submit" className="btn-save">Save Changes</button>
-                                    <button 
-                                        type="button" 
-                                        className="btn-cancel"
-                                        onClick={() => {
-                                            setSelectedOrder(null);
-                                            setOrderFormData({
-                                                status: '',
-                                                contact_number: '',
-                                                payment_method: '',
-                                                delivery_address: '',
-                                                payment_status: ''
-                                            });
-                                        }}
-                                    >
-                                        Cancel
-                                    </button>
-                                </div>
-                            </form>
+                            <div className="order-edit-form-container">
+                                <form onSubmit={handleOrderUpdate} className="order-form">
+                                    <h3>Edit Order #{selectedOrder.id}</h3>
+                                    <div className="form-group">
+                                        <label>Status:</label>
+                                        <select
+                                            name="status"
+                                            value={orderFormData.status}
+                                            onChange={(e) => setOrderFormData({...orderFormData, status: e.target.value})}
+                                            required
+                                            className="form-control"
+                                        >
+                                            <option value="pending">Pending</option>
+                                            <option value="processing">Processing</option>
+                                            <option value="completed">Completed</option>
+                                            <option value="cancelled">Cancelled</option>
+                                        </select>
+                                    </div>
+                                    <div className="form-group">
+                                        <label>Contact Number:</label>
+                                        <input
+                                            type="text"
+                                            name="contact_number"
+                                            value={orderFormData.contact_number}
+                                            onChange={(e) => setOrderFormData({...orderFormData, contact_number: e.target.value})}
+                                            required
+                                            className="form-control"
+                                        />
+                                    </div>
+                                    <div className="form-group">
+                                        <label>Payment Method:</label>
+                                        <select
+                                            name="payment_method"
+                                            value={orderFormData.payment_method}
+                                            onChange={(e) => setOrderFormData({...orderFormData, payment_method: e.target.value})}
+                                            required
+                                            className="form-control"
+                                        >
+                                            <option value="">Select Payment Method</option>
+                                            <option value="cash">Cash</option>
+                                            <option value="card">Card</option>
+                                            <option value="khalti">Khalti</option>
+                                        </select>
+                                    </div>
+                                    <div className="form-group">
+                                        <label>Delivery Address:</label>
+                                        <textarea
+                                            name="delivery_address"
+                                            value={orderFormData.delivery_address}
+                                            onChange={(e) => setOrderFormData({...orderFormData, delivery_address: e.target.value})}
+                                            required
+                                            className="form-control"
+                                        />
+                                    </div>
+                                    <div className="form-actions">
+                                        <button type="submit" className="btn-save">Save Changes</button>
+                                        <button 
+                                            type="button" 
+                                            className="btn-cancel"
+                                            onClick={() => {
+                                                setSelectedOrder(null);
+                                                setOrderFormData({
+                                                    status: '',
+                                                    contact_number: '',
+                                                    payment_method: '',
+                                                    delivery_address: '',
+                                                    payment_status: ''
+                                                });
+                                            }}
+                                        >
+                                            Cancel
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
                         )}
 
                         {/* Orders List */}
@@ -1236,11 +1469,29 @@ const AdminDashboard = () => {
                     <div className="users-section">
                         <h2>Manage Users</h2>
                         
-                        {/* User Edit Form */}
-                        {editingUser && (
-                            <div className="edit-form-container">
-                                <form onSubmit={handleUserUpdate} className="user-form">
-                                    <h3>Edit User</h3>
+                        {/* Add User Button */}
+                        {!isAddingUser && !editingUser && (
+                            <button 
+                                className="add-user-btn"
+                                onClick={() => {
+                                    setIsAddingUser(true);
+                                    setUserFormData({
+                                        name: '',
+                                        email: '',
+                                        role: '',
+                                        password: ''
+                                    });
+                                }}
+                            >
+                                Add New User
+                            </button>
+                        )}
+
+                        {/* User Form (Add/Edit) */}
+                        {(isAddingUser || editingUser) && (
+                            <div className="user-form-container">
+                                <form onSubmit={editingUser ? handleUserUpdate : handleUserCreate} className="user-form">
+                                    <h3>{editingUser ? 'Edit User' : 'Add New User'}</h3>
                                     <div className="form-group">
                                         <label>Name:</label>
                                         <input
@@ -1249,6 +1500,7 @@ const AdminDashboard = () => {
                                             value={userFormData.name}
                                             onChange={handleUserFormChange}
                                             required
+                                            placeholder="Enter user name"
                                         />
                                     </div>
                                     <div className="form-group">
@@ -1259,6 +1511,7 @@ const AdminDashboard = () => {
                                             value={userFormData.email}
                                             onChange={handleUserFormChange}
                                             required
+                                            placeholder="Enter email address"
                                         />
                                     </div>
                                     <div className="form-group">
@@ -1275,21 +1528,25 @@ const AdminDashboard = () => {
                                         </select>
                                     </div>
                                     <div className="form-group">
-                                        <label>New Password:</label>
+                                        <label>{editingUser ? 'New Password (leave blank to keep current):' : 'Password:'}</label>
                                         <input
                                             type="password"
                                             name="password"
                                             value={userFormData.password}
                                             onChange={handleUserFormChange}
-                                            placeholder="Leave blank to keep current password"
+                                            placeholder={editingUser ? "Enter new password (optional)" : "Enter password"}
+                                            {...(!editingUser && { required: true })}
                                         />
                                     </div>
                                     <div className="form-actions">
-                                        <button type="submit" className="btn-save">Save Changes</button>
+                                        <button type="submit" className="btn-save">
+                                            {editingUser ? 'Save Changes' : 'Add User'}
+                                        </button>
                                         <button 
                                             type="button" 
                                             className="btn-cancel"
                                             onClick={() => {
+                                                setIsAddingUser(false);
                                                 setEditingUser(null);
                                                 setUserFormData({
                                                     name: '',
@@ -1309,23 +1566,21 @@ const AdminDashboard = () => {
                         {/* Users List */}
                         <div className="users-list">
                             {users.map(user => (
-                                <div key={user.id} className="user-card">
+                                <div key={user.id} className={`user-card ${user.is_active ? 'active' : 'inactive'}`}>
                                     <div className="user-info">
                                         <h3>{user.name}</h3>
-                                        <p>{user.email}</p>
-                                        <p>Role: {user.role}</p>
-                                        <p>Status: {user.is_active ? 'Active' : 'Inactive'}</p>
-                                        
-                                        {/* Subscription Information */}
-                                        {userSubscriptions[user.id] && (
-                                            <div className="subscription-info">
-                                                <h4>Subscription Details</h4>
-                                                <p><strong>Plan:</strong> {userSubscriptions[user.id].type}</p>
-                                                <p><strong>Status:</strong> {userSubscriptions[user.id].status}</p>
-                                                <p><strong>Start Date:</strong> {new Date(userSubscriptions[user.id].start_date).toLocaleDateString()}</p>
-                                                <p><strong>Next Billing:</strong> {new Date(userSubscriptions[user.id].next_billing_date).toLocaleDateString()}</p>
-                                            </div>
+                                        <p><strong>Email:</strong> {user.email}</p>
+                                        <p><strong>Role:</strong> <span className={`role-badge ${user.role}`}>{user.role}</span></p>
+                                        <p><strong>Status:</strong> 
+                                            <span className={`status-badge ${user.is_active ? 'active' : 'inactive'}`}>
+                                                {user.is_active ? 'Active' : 'Inactive'}
+                                            </span>
+                                        </p>
+                                        <p><strong>Reward Points:</strong> {user.reward_points}</p>
+                                        {user.has_subscription && (
+                                            <p><span className="subscription-badge">Active Subscription</span></p>
                                         )}
+                                        <p><strong>Joined:</strong> {new Date(user.created_at).toLocaleDateString()}</p>
                                     </div>
                                     <div className="user-actions">
                                         <button
@@ -1335,27 +1590,59 @@ const AdminDashboard = () => {
                                             Edit
                                         </button>
                                         <button
-                                            className="btn-delete"
-                                            onClick={() => handleUserDelete(user)}
-                                        >
-                                            Delete
-                                        </button>
-                                        <button
-                                            onClick={() => updateUserStatus(user.id, !user.is_active)}
-                                            className={user.is_active ? 'deactivate' : 'activate'}
+                                            className={`btn-toggle-status ${user.is_active ? 'deactivate' : 'activate'}`}
+                                            onClick={() => handleToggleUserStatus(user.id)}
+                                            disabled={user.id === parseInt(sessionStorage.getItem('userId'))}
                                         >
                                             {user.is_active ? 'Deactivate' : 'Activate'}
+                                        </button>
+                                        <button
+                                            className="btn-delete"
+                                            onClick={() => handleUserDelete(user)}
+                                            disabled={user.id === parseInt(sessionStorage.getItem('userId'))}
+                                        >
+                                            Delete
                                         </button>
                                     </div>
                                 </div>
                             ))}
                         </div>
+
+                        {/* User Delete Confirmation Dialog */}
+                        {userDeleteDialog.isOpen && <UserDeleteConfirmationDialog />}
                     </div>
                 )}
 
                 {activeTab === 'subscriptions' && (
                     <div className="subscriptions-section">
                         <h2>Subscriptions Management</h2>
+                        <div className="subscriptions-header">
+                            <div className="subscription-stats">
+                                <div className="stat-card">
+                                    <h3>Total Subscriptions</h3>
+                                    <p>{subscriptions.length}</p>
+                                </div>
+                                <div className="stat-card">
+                                    <h3>Active Subscriptions</h3>
+                                    <p>{subscriptions.filter(sub => sub.status === 'active').length}</p>
+                                </div>
+                                <div className="stat-card">
+                                    <h3>Monthly Revenue</h3>
+                                    <p>{formatCurrency(subscriptions.reduce((total, sub) => 
+                                        sub.status === 'active' ? total + parseFloat(sub.price) : total, 0
+                                    ))}</p>
+                                </div>
+                            </div>
+                        </div>
+                        <button 
+                            className="refresh-subscriptions-btn"
+                            onClick={() => {
+                                setLoading(true);
+                                fetchData().then(() => setLoading(false));
+                            }}
+                        >
+                            Refresh Subscriptions
+                        </button>
                         <div className="subscriptions-list">
                             {subscriptions.length === 0 ? (
                                 <div className="no-subscriptions">
@@ -1365,36 +1652,72 @@ const AdminDashboard = () => {
                                 subscriptions.map((subscription) => (
                                     <div key={`subscription-${subscription.id}`} className="subscription-card">
                                         <div className="subscription-header">
-                                            <h3>Subscription #{subscription.id}</h3>
-                                            <span className={`status ${getStatusColor(subscription.status || 'active')}`}>
-                                                {subscription.status || 'active'}
-                                            </span>
+                                            <div className="subscription-title">
+                                                <h3>Subscription #{subscription.id}</h3>
+                                                <div className="status-badges">
+                                                    <span className={`status-badge ${subscription.status}`}>
+                                                        {subscription.status}
+                                                    </span>
+                                                    <span className={`payment-status ${subscription.payment_status}`}>
+                                                        {subscription.payment_status}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            <div className="subscription-actions">
+                                                {subscription.status === 'active' && (
+                                                    <button
+                                                        className="cancel-button"
+                                                        onClick={() => handleCancelSubscription(subscription.id)}
+                                                    >
+                                                        Cancel Subscription
+                                                    </button>
+                                                )}
+                                                <button
+                                                    className="delete-button"
+                                                    onClick={() => handleDeleteSubscription(subscription.id)}
+                                                >
+                                                    Delete
+                                                </button>
+                                            </div>
                                         </div>
                                         <div className="subscription-details">
-                                            <p><strong>User:</strong> {subscription.user_name}</p>
-                                            <p><strong>Plan:</strong> {subscription.plan_name}</p>
-                                            <p><strong>Price:</strong> {formatCurrency(subscription.price)}</p>
-                                            <p><strong>Start Date:</strong> {new Date(subscription.start_date).toLocaleDateString()}</p>
-                                            <p><strong>Next Billing:</strong> {new Date(subscription.next_billing_date).toLocaleDateString()}</p>
-                                            {subscription.end_date && (
-                                                <p><strong>End Date:</strong> {new Date(subscription.end_date).toLocaleDateString()}</p>
-                                            )}
-                                        </div>
-                                        <div className="subscription-actions">
-                                            {subscription.status === 'active' && (
-                                                <button
-                                                    className="cancel-button"
-                                                    onClick={() => handleCancelSubscription(subscription.id)}
-                                                >
-                                                    Cancel Subscription
-                                                </button>
-                                            )}
-                                            <button
-                                                className="delete-button"
-                                                onClick={() => handleDeleteSubscription(subscription.id)}
-                                            >
-                                                Delete
-                                            </button>
+                                            <div className="user-info">
+                                                <h4>User Information</h4>
+                                                <p><strong>Name:</strong> {subscription.user_name}</p>
+                                                <p><strong>Email:</strong> {subscription.user_email}</p>
+                                                <p><strong>User ID:</strong> {subscription.user_id}</p>
+                                            </div>
+                                            <div className="plan-info">
+                                                <h4>Plan Details</h4>
+                                                <p><strong>Plan:</strong> {subscription.plan_name}</p>
+                                                <p><strong>Price:</strong> {formatCurrency(subscription.price)}</p>
+                                                <p><strong>Duration:</strong> {subscription.duration}</p>
+                                                <p><strong>Payment Method:</strong> {subscription.payment_method || 'N/A'}</p>
+                                                {subscription.transaction_id && (
+                                                    <p><strong>Transaction ID:</strong> {subscription.transaction_id}</p>
+                                                )}
+                                            </div>
+                                            <div className="subscription-dates">
+                                                <h4>Subscription Period</h4>
+                                                <p><strong>Start Date:</strong> {new Date(subscription.start_date).toLocaleDateString()}</p>
+                                                <p><strong>Next Billing:</strong> {new Date(subscription.next_billing_date).toLocaleDateString()}</p>
+                                                {subscription.end_date && (
+                                                    <p><strong>End Date:</strong> {new Date(subscription.end_date).toLocaleDateString()}</p>
+                                                )}
+                                            </div>
+                                            <div className="features">
+                                                <h4>Plan Features</h4>
+                                                <ul>
+                                                    {subscription.features ? 
+                                                        (Array.isArray(subscription.features) 
+                                                            ? subscription.features 
+                                                            : subscription.features.split(',')
+                                                        ).map((feature, index) => (
+                                                            <li key={index}>{feature}</li>
+                                                        ))
+                                                    : <li>No features listed</li>}
+                                                </ul>
+                                            </div>
                                         </div>
                                     </div>
                                 ))
@@ -1402,10 +1725,17 @@ const AdminDashboard = () => {
                         </div>
                     </div>
                 )}
+
+                {activeTab === 'wallet' && (
+                    <div className="wallet-section">
+                        <RestaurantWallet />
+                    </div>
+                )}
             </main>
 
             {deleteDialog.isOpen && <DeleteConfirmationDialog />}
             {userDeleteDialog.isOpen && <UserDeleteConfirmationDialog />}
+            {saveConfirmationDialog.isOpen && <SaveConfirmationDialog />}
         </div>
     );
 };

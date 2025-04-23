@@ -135,36 +135,46 @@ router.post('/create', authenticateToken, async (req, res) => {
 // Get single order by ID
 router.get('/:orderId', authenticateToken, async (req, res) => {
     try {
-        const [orders] = await pool.query(
+        // First get the order details with payment info
+        const [orderDetails] = await pool.query(
             `SELECT o.*, 
-                    GROUP_CONCAT(
-                        JSON_OBJECT(
-                            'id', oi.id,
-                            'name', p.name,
-                            'price', oi.price,
-                            'quantity', oi.quantity,
-                            'image_url', p.image_url
-                        )
-                    ) as items
+                    u.name as user_name, 
+                    u.email as user_email,
+                    p1.khalti_token,
+                    p1.khalti_idx,
+                    p1.amount as payment_amount,
+                    p1.status as payment_status
              FROM orders o
-             LEFT JOIN order_items oi ON o.id = oi.order_id
-             LEFT JOIN products p ON oi.product_id = p.id
-             WHERE o.id = ? AND o.user_id = ?
-             GROUP BY o.id`,
-            [req.params.orderId, req.user.id]
+             LEFT JOIN users u ON o.user_id = u.id
+             LEFT JOIN payments p1 ON o.id = p1.order_id
+             WHERE o.id = ?`,
+            [req.params.orderId]
         );
 
-        if (!orders || orders.length === 0) {
-            return res.status(404).json({ 
-                success: false, 
-                message: 'Order not found' 
+        if (!orderDetails || orderDetails.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Order not found'
             });
         }
 
-        // Parse the items string into JSON
+        // Then get the order items separately
+        const [orderItems] = await pool.query(
+            `SELECT oi.id,
+                    p.name,
+                    oi.price,
+                    oi.quantity,
+                    p.image_url
+             FROM order_items oi
+             LEFT JOIN products p ON oi.product_id = p.id
+             WHERE oi.order_id = ?`,
+            [req.params.orderId]
+        );
+
+        // Combine the results
         const order = {
-            ...orders[0],
-            items: orders[0].items ? JSON.parse(`[${orders[0].items}]`) : []
+            ...orderDetails[0],
+            items: orderItems
         };
 
         res.json({ success: true, order });
@@ -693,6 +703,57 @@ router.delete('/:orderId', authenticateToken, async (req, res) => {
         });
     } finally {
         connection.release();
+    }
+});
+
+// Update order status and payment status
+router.put('/:id/status', authenticateToken, async (req, res) => {
+    try {
+        const { status, payment_status } = req.body;
+        const orderId = req.params.id;
+
+        // Get the order details first
+        const [order] = await pool.query(
+            'SELECT * FROM orders WHERE id = ?',
+            [orderId]
+        );
+
+        if (order.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Order not found'
+            });
+        }
+
+        // Update order status and payment status
+        await pool.query(
+            `UPDATE orders 
+             SET status = ?, 
+                 payment_status = ?,
+                 updated_at = NOW()
+             WHERE id = ?`,
+            [status, payment_status, orderId]
+        );
+
+        // If payment is marked as paid, update the wallet balance
+        if (payment_status === 'paid') {
+            await pool.query(
+                `INSERT INTO wallet_transactions (order_id, amount, type, payment_method, created_at)
+                 VALUES (?, ?, 'credit', ?, NOW())`,
+                [orderId, order[0].total_amount, order[0].payment_method]
+            );
+        }
+
+        res.json({
+            success: true,
+            message: 'Order status updated successfully'
+        });
+    } catch (error) {
+        console.error('Error updating order status:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error updating order status'
+        });
     }
 });
 

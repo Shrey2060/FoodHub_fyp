@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import "./SubscriptionPage.css";
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 
 // Success Dialog Component
 const SuccessDialog = ({ isOpen, message, onClose }) => {
@@ -23,13 +23,24 @@ const SuccessDialog = ({ isOpen, message, onClose }) => {
   );
 };
 
-const SubscriptionPage = ({ onClose }) => {
+const SubscriptionPage = ({ onClose, onSubscribe }) => {
   const [selectedPlan, setSelectedPlan] = useState(null);
   const [processing, setProcessing] = useState(false);
   const [plans, setPlans] = useState([]);
   const [successDialog, setSuccessDialog] = useState({ isOpen: false, message: '' });
   const navigate = useNavigate();
   const processingRef = useRef(false);
+  const location = useLocation();
+  const isDirectNavigation = !onClose; // Check if component was opened directly via route
+  
+  // Handle direct navigation close
+  const handleClose = () => {
+    if (isDirectNavigation) {
+      navigate('/');
+    } else if (onClose) {
+      onClose();
+    }
+  };
 
   useEffect(() => {
     fetchPlans();
@@ -83,7 +94,7 @@ const SubscriptionPage = ({ onClose }) => {
             `http://localhost:5000/api/payment/khalti/verify`,
             {
               pidx: pidx,
-              amount: storedSubscription.amount,
+              amount: storedSubscription.amount, // This is already in paisa from our stored data
               orderId: `sub_${storedSubscription.plan_id}`
             },
             {
@@ -131,6 +142,11 @@ const SubscriptionPage = ({ onClose }) => {
           // Clear the stored subscription
           sessionStorage.removeItem('currentKhaltiSubscription');
           
+          // Notify parent component that subscription was successful (if callback exists)
+          if (onSubscribe) {
+            onSubscribe();
+          }
+
           // Try to get user data from the correct endpoint
           try {
             const userData = await axios.get('http://localhost:5000/api/auth/profile', {
@@ -145,8 +161,8 @@ const SubscriptionPage = ({ onClose }) => {
             // Continue with navigation even if user data fetch fails
           }
 
-          // Navigate to invoice page
-          navigate(`/invoice?subscription_type=${encodeURIComponent(subscriptionType)}&amount=${amount}&pidx=${pidx}&payment_status=paid&transaction_id=${pidx}`);
+          // First show invoice, then redirect to subscription details page
+          navigate(`/invoice?subscription_type=${encodeURIComponent(subscriptionType)}&amount=${amount}&pidx=${pidx}&payment_status=paid&transaction_id=${pidx}&redirect_to=/my-subscription`);
           
           toast.dismiss(loadingToast);
           toast.success('Payment successful! Generating invoice...');
@@ -175,7 +191,7 @@ const SubscriptionPage = ({ onClose }) => {
     return () => {
       processingRef.current = false;
     };
-  }, [navigate]);
+  }, [navigate, onClose, onSubscribe]);
 
   const fetchPlans = async () => {
     try {
@@ -196,61 +212,58 @@ const SubscriptionPage = ({ onClose }) => {
 
   const handleKhaltiPayment = async () => {
     if (!selectedPlan) {
-      toast.error('Please select a plan first');
+      toast.error('Please select a subscription plan');
       return;
     }
 
+    setProcessing(true);
     try {
-      setProcessing(true);
-      const amount = selectedPlan.price * 100; // Convert to paisa
+      // Get the price in numeric format
+      const priceInRupees = parseFloat(selectedPlan.price);
+      // Convert to paisa (Khalti requires amount in paisa)
+      const priceInPaisa = Math.round(priceInRupees * 100);
       
-      if (!amount) {
-        toast.error('Invalid subscription amount');
-        return;
-      }
-
-      // Store complete subscription details in sessionStorage
-      const subscriptionDetails = {
+      const token = sessionStorage.getItem('authToken');
+      const userData = JSON.parse(sessionStorage.getItem('userData') || '{}');
+      
+      // Store subscription details for verification after payment
+      sessionStorage.setItem('currentKhaltiSubscription', JSON.stringify({
         plan_id: selectedPlan.id,
-        amount: amount,
         plan_name: selectedPlan.name,
-        price: selectedPlan.price,
-        duration: selectedPlan.duration,
-        features: selectedPlan.features
-      };
-      sessionStorage.setItem('currentKhaltiSubscription', JSON.stringify(subscriptionDetails));
+        amount: priceInPaisa, // Store in paisa for verification
+        price: priceInRupees // Store in rupees for display
+      }));
 
       const payload = {
-        return_url: `http://localhost:5173/subscriptionPage?subscription_type=${encodeURIComponent(selectedPlan.name)}&amount=${amount}&payment_status=paid`,
+        return_url: "http://localhost:5173/subscription/success",
         website_url: "http://localhost:5173",
-        amount: amount,
+        amount: priceInPaisa, // Send the amount in paisa (not rupees)
         purchase_order_id: `sub_${selectedPlan.id}_${Date.now()}`,
-        purchase_order_name: `Subscription: ${selectedPlan.name}`,
+        purchase_order_name: `Subscription - ${selectedPlan.name}`,
         customer_info: {
-          name: sessionStorage.getItem('userName') || "Customer",
-          email: sessionStorage.getItem('userEmail') || "",
-          phone: "9800000000"
+          name: userData.name || "User",
+          email: userData.email || "",
+          phone: userData.phone || "9800000000"
         },
         amount_breakdown: [
           {
             label: "Subscription Amount",
-            amount: amount
+            amount: priceInPaisa // Send the amount in paisa (not rupees)
           }
         ],
         product_details: [
           {
             identity: selectedPlan.id,
             name: selectedPlan.name,
-            total_price: amount,
+            total_price: priceInPaisa, // Send the amount in paisa (not rupees)
             quantity: 1,
-            unit_price: amount
+            unit_price: priceInPaisa // Send the amount in paisa (not rupees)
           }
         ]
       };
 
       console.log("Initiating Khalti payment with payload:", payload);
 
-      const token = sessionStorage.getItem('authToken');
       const response = await axios.post(
         "http://localhost:5000/api/payment/khalti/initiate",
         payload,
@@ -264,10 +277,10 @@ const SubscriptionPage = ({ onClose }) => {
 
       console.log("Khalti initiation response:", response.data);
 
-      if (response.data && response.data.payment_url) {
+      if (response.data && response.data.data && response.data.data.payment_url) {
         toast.success('Redirecting to Khalti payment page...');
         // Redirect to Khalti payment page
-        window.location.href = response.data.payment_url;
+        window.location.href = response.data.data.payment_url;
       } else {
         toast.error('Failed to initiate payment: ' + (response.data?.message || 'Unknown error'));
         setProcessing(false);
@@ -309,7 +322,7 @@ const SubscriptionPage = ({ onClose }) => {
           >
             {processing ? 'Processing...' : 'Pay with Khalti'}
           </button>
-          <button className="close-modal-button" onClick={onClose}>Close</button>
+          <button className="close-modal-button" onClick={handleClose}>Close</button>
         </div>
       </div>
 
@@ -319,7 +332,7 @@ const SubscriptionPage = ({ onClose }) => {
         message={successDialog.message}
         onClose={() => {
           setSuccessDialog({ isOpen: false, message: '' });
-          onClose();
+          handleClose();
         }}
       />
     </div>

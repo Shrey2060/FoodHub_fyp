@@ -8,7 +8,6 @@ import pork from "../../assets/images/pork.png";
 import right from "../../assets/images/ArrowRight.png";
 import left from "../../assets/images/ArrowLeft.png";
 import "./Swipper.css";
-import Subscription from "../Subscription/Subscription";
 
 const foodItems = [
   { img: pork, recipeName: "Pork Satay, Grilled Pork", description: "Grilled pork with rice and veggies.", price: "560", category: "Keto" },
@@ -51,7 +50,6 @@ const PrevArrow = (props) => {
   );
 };
 
-
 const DietFood = () => {
   const [selectedCategory, setSelectedCategory] = useState("All");
 
@@ -76,7 +74,6 @@ const DietFood = () => {
       
 
   return (
-    <>
     <div className="diet-section">
       <div className="search-bar">
         <SearchBar />
@@ -108,8 +105,6 @@ const DietFood = () => {
         </Slider>
       </div>
     </div>
-    <Subscription />
-    </>
   );
 };
 

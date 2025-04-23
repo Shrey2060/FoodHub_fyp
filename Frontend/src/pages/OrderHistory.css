@@ -733,4 +733,37 @@
 .btn-cancel:disabled {
   background-color: #6c757d;
   cursor: not-allowed;
+}
+
+/* Bundle items styling */
+.bundle-items-container {
+  margin-top: 10px;
+  padding: 8px 12px;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  font-size: 0.9rem;
+}
+
+.bundle-items-label {
+  font-weight: 600;
+  margin-bottom: 5px;
+  color: #4a5568;
+}
+
+.bundle-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 3px 0;
+  border-bottom: 1px dashed #e2e8f0;
+}
+
+.bundle-item:last-child {
+  border-bottom: none;
+}
+
+.item-description {
+  margin-top: 5px;
+  font-size: 0.85rem;
+  color: #718096;
+  font-style: italic;
 } 

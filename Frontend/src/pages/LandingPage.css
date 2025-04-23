@@ -1,0 +1,14 @@
+.landing-page {
+    min-height: 100vh;
+}
+
+.reviews-section {
+    padding: 4rem 2rem;
+    background-color: #f8f9fa;
+}
+
+@media (max-width: 768px) {
+    .reviews-section {
+        padding: 2rem 1rem;
+    }
+}

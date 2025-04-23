@@ -2,9 +2,24 @@ const express = require("express");
 const router = express.Router();
 const db = require("../config/db");
 const auth = require("../middleware/authMiddleware");
+const { getUserRewardPoints } = require('../controllers/rewardController');
+const { authenticateToken } = require('../middleware/auth');
 
 // Reward points for first-time login
 const LOGIN_REWARD_POINTS = 10;
+
+// Get available redemption options
+router.get("/redemption-options", auth, async (req, res) => {
+    try {
+        const [options] = await db.query(
+            "SELECT * FROM reward_redemption_options WHERE is_active = true ORDER BY points_required ASC"
+        );
+        res.json({ success: true, data: options });
+    } catch (error) {
+        console.error("❌ Error fetching redemption options:", error);
+        res.status(500).json({ success: false, message: "Error fetching redemption options" });
+    }
+});
 
 // ✅ Get user's reward points
 router.get("/points", auth, async (req, res) => {
@@ -136,13 +151,10 @@ router.post("/redeem", auth, async (req, res) => {
 
         const { points_to_redeem } = req.body;
 
-        // Validate redemption option
-        const [option] = await connection.query(
-            "SELECT * FROM reward_redemption_options WHERE points_required = ? AND is_active = true",
-            [points_to_redeem]
-        );
-
-        if (option.length === 0) throw new Error("Invalid redemption amount");
+        // Validate input
+        if (!points_to_redeem || isNaN(points_to_redeem) || points_to_redeem <= 0) {
+            throw new Error("Please select a valid redemption amount");
+        }
 
         // Check user's points balance
         const [rewards] = await connection.query(
@@ -150,8 +162,27 @@ router.post("/redeem", auth, async (req, res) => {
             [req.user.id]
         );
 
+        if (!rewards[0]) {
+            // Create new rewards record if it doesn't exist
+            await connection.query(
+                "INSERT INTO user_rewards (user_id, points_balance, total_points_earned) VALUES (?, 0, 0)",
+                [req.user.id]
+            );
+            throw new Error("No reward points found for this user");
+        }
+
         if (rewards[0].points_balance < points_to_redeem) {
             throw new Error("Insufficient points balance");
+        }
+
+        // Validate redemption option
+        const [option] = await connection.query(
+            "SELECT * FROM reward_redemption_options WHERE points_required = ? AND is_active = true",
+            [points_to_redeem]
+        );
+
+        if (option.length === 0) {
+            throw new Error("Invalid redemption amount. Please select a valid redemption option.");
         }
 
         // Update points balance
@@ -164,16 +195,26 @@ router.post("/redeem", auth, async (req, res) => {
         await connection.query(
             `INSERT INTO reward_transactions 
              (user_id, transaction_type, points_redeemed, description) 
-             VALUES (?, 'REDEEMED', ?, ?);`,
+             VALUES (?, 'REDEEMED', ?, ?)`,
             [req.user.id, points_to_redeem, option[0].description]
         );
 
         await connection.commit();
-        res.json({ success: true, message: "Points redeemed successfully", reward: option[0] });
+        res.json({ 
+            success: true, 
+            message: "Points redeemed successfully", 
+            data: {
+                reward: option[0],
+                remaining_points: rewards[0].points_balance - points_to_redeem
+            }
+        });
     } catch (error) {
         await connection.rollback();
         console.error("❌ Error redeeming points:", error);
-        res.status(400).json({ success: false, message: error.message || "Error redeeming points" });
+        res.status(400).json({ 
+            success: false, 
+            message: error.message || "Error redeeming points" 
+        });
     } finally {
         connection.release();
     }
@@ -186,6 +227,10 @@ router.post("/add-points", auth, async (req, res) => {
         await connection.beginTransaction();
 
         const { points_earned, order_id } = req.body;
+
+        if (!points_earned || points_earned <= 0) {
+            throw new Error("Invalid points amount");
+        }
 
         // Update points balance
         await connection.query(
@@ -214,5 +259,8 @@ router.post("/add-points", auth, async (req, res) => {
         connection.release();
     }
 });
+
+// Get user's reward points
+router.get('/', authenticateToken, getUserRewardPoints);
 
 module.exports = router;
