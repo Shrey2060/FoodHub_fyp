@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { toast } from 'react-toastify';
-import { FaCoins, FaHistory, FaSpinner } from 'react-icons/fa';
-
+import { FaCoins, FaHistory, FaSpinner, FaHome } from 'react-icons/fa';
+import { useNavigate } from 'react-router-dom';
+import './RewardPoints.css';
 
 const RewardPoints = () => {
     const [pointsData, setPointsData] = useState({
@@ -12,6 +13,8 @@ const RewardPoints = () => {
     const [history, setHistory] = useState([]);
     const [loading, setLoading] = useState(true);
     const [redeeming, setRedeeming] = useState(false);
+    const [clearing, setClearing] = useState(false);
+    const navigate = useNavigate();
 
     useEffect(() => {
         fetchRewardData();
@@ -75,6 +78,26 @@ const RewardPoints = () => {
         }
     };
 
+    const handleClearHistory = async () => {
+        if (!window.confirm('Are you sure you want to clear your reward history? This action cannot be undone.')) {
+            return;
+        }
+
+        try {
+            setClearing(true);
+            
+            // Clear history locally
+            setHistory([]);
+            toast.success('Reward history cleared successfully');
+            
+        } catch (error) {
+            toast.error('Error clearing reward history');
+            console.error('Error clearing reward history:', error);
+        } finally {
+            setClearing(false);
+        }
+    };
+
     if (loading) {
         return (
             <div className="loading-container">
@@ -86,6 +109,9 @@ const RewardPoints = () => {
 
     return (
         <div className="rewards-container">
+            <button className="home-btn" onClick={() => navigate('/home')}>
+                <FaHome style={{ marginRight: '6px' }} /> Home
+            </button>
             <div className="rewards-summary">
                 <h1><FaCoins className="icon" /> Your Reward Points</h1>
                 <div className="points-card">
@@ -119,7 +145,18 @@ const RewardPoints = () => {
             </div>
 
             <div className="rewards-history">
-                <h2><FaHistory className="icon" /> Points History</h2>
+                <div className="history-header">
+                    <h2><FaHistory className="icon" /> Points History</h2>
+                    {history.length > 0 && (
+                        <button 
+                            className="clear-history-btn"
+                            onClick={handleClearHistory}
+                            disabled={clearing}
+                        >
+                            {clearing ? <FaSpinner className="spinner" /> : 'Clear History'}
+                        </button>
+                    )}
+                </div>
                 {history.length === 0 ? (
                     <p className="no-history">No transaction history available</p>
                 ) : (

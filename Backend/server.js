@@ -22,6 +22,9 @@ const productRoutes = require('./routes/productRoutes');
 const subscriptionRoutes = require('./routes/subscriptionRoutes');
 const preOrderRoutes = require('./routes/PreOrderRoutes');
 const allergyRoutes = require('./routes/allergyRoutes');
+const deliveryRoutes = require('./routes/deliveryRoutes');
+const adminPreOrderRoutes = require('./routes/adminPreOrders'); // Admin Pre-Order CRUD
+const adminUsersRoutes = require('./routes/adminUsers');
 
 // Load environment variables
 dotenv.config();
@@ -51,6 +54,9 @@ app.use("/api/products", productRoutes);
 app.use("/api/subscriptions", subscriptionRoutes);
 app.use('/api/pre-orders', preOrderRoutes);
 app.use('/api/allergies', allergyRoutes);
+app.use('/api/deliveries', deliveryRoutes);
+app.use('/api/admin/pre-orders', adminPreOrderRoutes); // Register admin pre-orders route
+app.use('/api/admin/users', adminUsersRoutes);
 
 // Test database connection
 pool.getConnection()

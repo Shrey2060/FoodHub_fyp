@@ -145,12 +145,31 @@ const OrderHistory = () => {
   useEffect(() => {
     fetchOrders();
     fetchPreOrders();
+    fetchNotifications();
   }, []);
 
   // Fetch notifications
   const fetchNotifications = async () => {
-    // This will be implemented later when backend is ready
-    return;
+    try {
+      const token = sessionStorage.getItem('authToken');
+      if (!token) return;
+
+      const response = await axios.get(
+        'http://localhost:5000/api/orders/notifications',
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      if (response.data.success) {
+        setNotifications(response.data.notifications);
+      }
+    } catch (error) {
+      console.error('Error fetching notifications:', error);
+    }
   };
 
   // Mark notification as read
@@ -385,12 +404,10 @@ const OrderHistory = () => {
         });
 
         const response = await axios.post(
-            'http://localhost:5000/api/rewards/add',
+            'http://localhost:5000/api/rewards/add-points',
             {
                 order_id: orderId,
-                points: pointsToAward,
-                transaction_type: 'purchase',
-                description: `Reward points for Order #${orderId}`
+                points_earned: pointsToAward
             },
             {
                 headers: {
@@ -452,7 +469,7 @@ const OrderHistory = () => {
             console.log('Verifying Khalti payment:', {
                 orderId,
                 pidx,
-                amount: paymentInfo.amount, // This should be in paisa
+                amount: paymentInfo.amount,
                 storedRupees: paymentInfo.rupees,
                 paymentInfo
             });
@@ -462,7 +479,7 @@ const OrderHistory = () => {
                 `http://localhost:5000/api/payment/khalti/verify`,
                 {
                     pidx: pidx,
-                    amount: paymentInfo.amount, // This should be in paisa already
+                    amount: paymentInfo.amount,
                     orderId: orderId
                 },
                 {
@@ -485,7 +502,8 @@ const OrderHistory = () => {
                         status: 'processing',
                         transaction_id: pidx,
                         khalti_payment_idx: pidx,
-                        amount_paid: paymentInfo.rupees // This is in rupees for database storage
+                        amount_paid: paymentInfo.rupees,
+                        is_confirmed: true
                     },
                     {
                         headers: {
@@ -523,7 +541,7 @@ const OrderHistory = () => {
                     sessionStorage.removeItem('khalti_pidx');
                     sessionStorage.removeItem('khalti_payment_amount');
 
-                    // Navigate to invoice - IMPORTANT: Pass amount in paisa so Invoice component can convert it properly
+                    // Navigate to invoice
                     navigate(`/invoice?order_id=${orderId}&pidx=${pidx}&payment_status=paid&transaction_id=${pidx}&type=order&amount=${paymentInfo.amount}`);
                     toast.dismiss(loadingToast);
                     toast.success('Payment successful! Generating invoice...');
@@ -769,6 +787,11 @@ const OrderHistory = () => {
         );
 
         if (cancelResponse.data.success) {
+            const cancelledPoints = cancelResponse.data.cancelledPoints || 0;
+            const pointsMessage = cancelledPoints > 0 
+                ? `\n${cancelledPoints} reward points earned from this order have been cancelled.`
+                : '\nNo reward points were earned from this order.';
+
             // Check if the order was paid with Khalti and is in 'paid' status
             if (order.payment_method === 'khalti' && order.payment_status === 'paid') {
                 toast.loading('Your order is cancelled. Processing refund through Khalti...', { id: loadingToastId });
@@ -794,10 +817,10 @@ const OrderHistory = () => {
                     );
 
                     if (refundResponse.data.success) {
-                        // Show success dialog with refund information
+                        // Show success dialog with refund and reward points information
                         setSuccessDialog({
                             isOpen: true,
-                            message: `Order #${order.id} has been cancelled. A refund of ${formatCurrency(orderTotals[order.id]?.total)} will be processed to your Khalti account within 3-5 business days.`
+                            message: `Order #${order.id} has been cancelled. A refund of ${formatCurrency(orderTotals[order.id]?.total)} will be processed to your Khalti account within 3-5 business days.${pointsMessage}`
                         });
                         toast.dismiss(loadingToastId);
                         
@@ -812,7 +835,7 @@ const OrderHistory = () => {
                     } else {
                         setSuccessDialog({
                             isOpen: true,
-                            message: `Order #${order.id} has been cancelled. However, there was an issue processing your refund. Our team will contact you shortly.`
+                            message: `Order #${order.id} has been cancelled. However, there was an issue processing your refund. Our team will contact you shortly.${pointsMessage}`
                         });
                         toast.dismiss(loadingToastId);
                     }
@@ -820,16 +843,24 @@ const OrderHistory = () => {
                     console.error('Refund error:', refundError);
                     setSuccessDialog({
                         isOpen: true,
-                        message: `Order #${order.id} has been cancelled. There was an error processing your refund. Our support team has been notified and will assist you shortly.`
+                        message: `Order #${order.id} has been cancelled. There was an error processing your refund. Our support team has been notified and will assist you shortly.${pointsMessage}`
                     });
                     toast.dismiss(loadingToastId);
                 }
             } else {
                 // For non-Khalti payments or pending payments
                 if (order.payment_method === 'khalti' && order.payment_status === 'pending') {
-                    toast.success('Order cancelled successfully. Refund will be sent to your Khalti account within 3-5 days.', { id: loadingToastId });
+                    setSuccessDialog({
+                        isOpen: true,
+                        message: `Order cancelled successfully. Refund will be sent to your Khalti account within 3-5 days.${pointsMessage}`
+                    });
+                    toast.success('Order cancelled successfully', { id: loadingToastId });
                 } else if (order.payment_method === 'cash') {
-                    toast.success('Order cancelled successfully.', { id: loadingToastId });
+                    setSuccessDialog({
+                        isOpen: true,
+                        message: `Order cancelled successfully.${pointsMessage}`
+                    });
+                    toast.success('Order cancelled successfully', { id: loadingToastId });
                 }
             }
 
@@ -1062,6 +1093,34 @@ const OrderHistory = () => {
       <div className="order-history-container">
         <h1 className="page-title">Order History</h1>
         
+        {/* Notifications Section */}
+        <div className="notifications-section">
+          <h2>Notifications</h2>
+          <div className="notifications-list">
+            {notifications.length === 0 ? (
+              <p className="no-notifications">No notifications</p>
+            ) : (
+              notifications.map((notification) => (
+                <div
+                  key={notification.id}
+                  className={`notification-item ${notification.is_read ? 'read' : 'unread'}`}
+                  onClick={() => markNotificationAsRead(notification.id)}
+                >
+                  <div className="notification-icon">
+                    {getStatusIcon(notification.type)}
+                  </div>
+                  <div className="notification-content">
+                    <p className="notification-message">{notification.message}</p>
+                    <p className="notification-time">
+                      {new Date(notification.created_at).toLocaleString()}
+                    </p>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
         {/* Tab Navigation */}
         <div className="tabs-container">
           <button
@@ -1211,99 +1270,95 @@ const OrderHistory = () => {
                 </div>
               ))
             ) : (
-              preOrders.map((order) => {
-                // Improved parsing logic for pre-order items
-                let parsedItems = [];
-                try {
-                  if (typeof order.items === 'string') {
-                    parsedItems = JSON.parse(order.items);
-                  } else if (Array.isArray(order.items)) {
-                    parsedItems = order.items;
-                  } else {
-                    console.warn('Order items is neither string nor array:', order.items);
+              preOrders.length === 0 ? (
+                <div className="no-orders-container">
+                  <h2>No Pre-Orders Found</h2>
+                  <p className="no-orders-subtitle">You haven't scheduled any pre-orders yet.</p>
+                </div>
+              ) : (
+                preOrders.map((order) => {
+                  // Robust parsing for items
+                  let parsedItems = [];
+                  try {
+                    if (typeof order.items === 'string' && order.items.trim() !== '') {
+                      parsedItems = JSON.parse('[' + order.items + ']');
+                    } else if (Array.isArray(order.items)) {
+                      parsedItems = order.items;
+                    }
+                  } catch (e) {
+                    console.error('Failed to parse items for order', order.id, order.items, e);
                     parsedItems = [];
                   }
-                  
-                  // Add additional logging to debug the items data
-                  console.log('Pre-order items data:', {
-                    orderId: order.id, 
-                    rawItems: order.items,
-                    parsedItems: parsedItems
-                  });
-                } catch (error) {
-                  console.error('Error parsing order items for order #' + order.id + ':', error);
-                  console.error('Raw items data:', order.items);
-                  parsedItems = [];
-                }
 
-                return (
-                  <div key={order.id} className="order-card">
-                    <div className="order-header">
-                      <h3>Pre-Order #{order.id}</h3>
-                      <span className={`status-badge ${getStatusColor(order.order_status)}`}>
-                        {order.order_status.charAt(0).toUpperCase() + order.order_status.slice(1)}
-                      </span>
-                    </div>
+                  return (
+                    <div key={order.id} className="order-card">
+                      <div className="order-header">
+                        <h3>Pre-Order #{order.id}</h3>
+                        <span className={`status-badge ${getStatusColor(order.order_status || 'pending')}`}>
+                          {(order.order_status || 'pending').charAt(0).toUpperCase() + (order.order_status || 'pending').slice(1)}
+                        </span>
+                      </div>
 
-                    <div className="order-details">
-                      <p><strong>Scheduled Date:</strong> {new Date(order.scheduled_date).toLocaleDateString()}</p>
-                      <p><strong>Delivery Time:</strong> {order.delivery_time}</p>
-                      <p><strong>Delivery Address:</strong> {order.delivery_address}</p>
-                      {order.special_instructions && (
-                        <p><strong>Special Instructions:</strong> {order.special_instructions}</p>
-                      )}
-                    </div>
+                      <div className="order-details">
+                        <p><strong>Scheduled Date:</strong> {new Date(order.scheduled_date).toLocaleDateString()}</p>
+                        <p><strong>Delivery Time:</strong> {order.delivery_time}</p>
+                        <p><strong>Delivery Address:</strong> {order.delivery_address}</p>
+                        {order.special_instructions && (
+                          <p><strong>Special Instructions:</strong> {order.special_instructions}</p>
+                        )}
+                      </div>
 
-                    <div className="order-items">
-                      <h4>Items:</h4>
-                      {Array.isArray(parsedItems) && parsedItems.length > 0 ? (
-                        parsedItems.map((item, index) => (
-                          <div key={index} className="order-item">
-                            <div className="item-info">
-                              <span className="item-name">{item.name}</span>
-                              <span className="item-quantity">x{item.quantity}</span>
+                      <div className="order-items">
+                        <h4>Items:</h4>
+                        {Array.isArray(parsedItems) && parsedItems.length > 0 ? (
+                          parsedItems.map((item, index) => (
+                            <div key={index} className="order-item">
+                              <div className="item-info">
+                                <span className="item-name">{item.name}</span>
+                                <span className="item-quantity">x{item.quantity}</span>
+                              </div>
+                              <span className="item-price">Rs. {item.price * item.quantity}</span>
                             </div>
-                            <span className="item-price">Rs. {item.price * item.quantity}</span>
-                          </div>
-                        ))
-                      ) : (
-                        <p className="no-items">No items found in this order</p>
-                      )}
-                    </div>
+                          ))
+                        ) : (
+                          <p className="no-items">No items found in this order</p>
+                        )}
+                      </div>
 
-                    <div className="order-summary">
-                      <div className="summary-row total">
-                        <span>Total Amount:</span>
-                        <span>{formatCurrency(
-                          Array.isArray(parsedItems) ? 
-                            parsedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0) : 
-                            0
-                        )}</span>
+                      <div className="order-summary">
+                        <div className="summary-row total">
+                          <span>Total Amount:</span>
+                          <span>
+                            {Array.isArray(parsedItems)
+                              ? `Rs. ${parsedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0).toFixed(2)}`
+                              : 'Rs. 0.00'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="order-actions">
+                        {order.order_status === 'pending' && (
+                          <button
+                            onClick={() => handleCancelPreOrder(order.id)}
+                            className="cancel-button"
+                          >
+                            Cancel Pre-Order
+                          </button>
+                        )}
+                        {order.order_status === 'cancelled' && (
+                          <button
+                            onClick={() => handleRemovePreOrder(order.id)}
+                            className="remove-button"
+                            data-order-id={order.id}
+                          >
+                            Remove
+                          </button>
+                        )}
                       </div>
                     </div>
-
-                    <div className="order-actions">
-                      {order.order_status === 'pending' && (
-                        <button
-                          onClick={() => handleCancelPreOrder(order.id)}
-                          className="cancel-button"
-                        >
-                          Cancel Pre-Order
-                        </button>
-                      )}
-                      {order.order_status === 'cancelled' && (
-                        <button
-                          onClick={() => handleRemovePreOrder(order.id)}
-                          className="remove-button"
-                          data-order-id={order.id}
-                        >
-                          Remove
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })
+                  );
+                })
+              )
             )}
           </div>
         )}
@@ -1355,11 +1410,19 @@ const OrderHistory = () => {
 };
 
 // Helper function to get status icon
-const getStatusIcon = (message) => {
-  if (message.includes('processing')) return '🔄';
-  if (message.includes('delivered') || message.includes('completed')) return '✅';
-  if (message.includes('cancelled')) return '❌';
-  return '📦';
+const getStatusIcon = (type) => {
+  switch (type) {
+    case 'order_status':
+      return '📦';
+    case 'order_confirmation':
+      return '✅';
+    case 'order_cancelled':
+      return '❌';
+    case 'delivery':
+      return '🚚';
+    default:
+      return '📢';
+  }
 };
 
 // Add styles for the remove button

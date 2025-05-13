@@ -629,10 +629,12 @@
 
 .notification-item.unread {
   background-color: #f0f7ff;
+  border-left: 4px solid #2196f3;
 }
 
 .notification-item.read {
   background-color: #f8f9fa;
+  border-left: 4px solid #e9ecef;
 }
 
 .notification-item:hover {
@@ -659,6 +661,14 @@
 .notification-time {
   color: #666;
   font-size: 0.85rem;
+}
+
+.no-notifications {
+  text-align: center;
+  color: #666;
+  padding: 1rem;
+  background-color: #f8f9fa;
+  border-radius: 6px;
 }
 
 .btn-confirm-order {

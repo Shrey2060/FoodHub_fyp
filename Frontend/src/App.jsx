@@ -81,6 +81,7 @@ function App() {
             <Route path="/about" element={<MainLayout><About /></MainLayout>} />
             <Route path="/contact" element={<MainLayout><Contact /></MainLayout>} />
             <Route path="/subscriptionPage" element={<MainLayout><SubscriptionPage /></MainLayout>} />
+            <Route path="/subscribe" element={<MainLayout><SubscriptionPage /></MainLayout>} />
             <Route path="/payment/success" element={<MainLayout><Invoice /></MainLayout>} />
 
             {/* Protected User Routes */}

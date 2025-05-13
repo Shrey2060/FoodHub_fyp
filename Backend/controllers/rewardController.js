@@ -123,8 +123,72 @@ const redeemRewardPoints = async (userId, pointsToRedeem, orderId) => {
     }
 };
 
+// Cancel reward points when order is cancelled
+const cancelRewardPoints = async (userId, orderId) => {
+    try {
+        // Get the reward transaction for this order
+        const [transaction] = await pool.query(
+            'SELECT points_earned FROM reward_transactions WHERE user_id = ? AND order_id = ? AND transaction_type = ?',
+            [userId, orderId, 'EARNED']
+        );
+
+        if (!transaction[0]) {
+            console.log('No reward points found for this order');
+            return 0;
+        }
+
+        const pointsToCancel = transaction[0].points_earned;
+
+        // Update reward points in user_rewards table
+        await pool.query(
+            `UPDATE user_rewards 
+             SET points_balance = points_balance - ?, 
+                 total_points_earned = total_points_earned - ? 
+             WHERE user_id = ?`,
+            [pointsToCancel, pointsToCancel, userId]
+        );
+
+        // Record cancellation transaction
+        await pool.query(
+            'INSERT INTO reward_transactions (user_id, transaction_type, points_redeemed, description, order_id) VALUES (?, ?, ?, ?, ?)',
+            [userId, 'CANCELLED', pointsToCancel, `Points cancelled for cancelled order #${orderId}`, orderId]
+        );
+
+        return pointsToCancel;
+    } catch (error) {
+        console.error('Error cancelling reward points:', error);
+        throw error;
+    }
+};
+
+// Clear reward history
+const clearRewardHistory = async (req, res) => {
+    try {
+        const userId = req.user.id;
+
+        // Delete all reward transactions for the user
+        await pool.query(
+            'DELETE FROM reward_transactions WHERE user_id = ?',
+            [userId]
+        );
+
+        res.json({ 
+            success: true, 
+            message: 'Reward history cleared successfully' 
+        });
+    } catch (error) {
+        console.error('Error clearing reward history:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error clearing reward history' 
+        });
+    }
+};
+
 module.exports = {
     getUserRewardPoints,
     addRewardPoints,
-    redeemRewardPoints
+    redeemRewardPoints,
+    cancelRewardPoints,
+    clearRewardHistory
 }; 

@@ -1,4 +1,5 @@
 const { addRewardPoints } = require('./rewardController');
+const pool = require('../config/database');
 
 const completeOrder = async (req, res) => {
     try {
@@ -31,4 +32,6 @@ const completeOrder = async (req, res) => {
         console.error('Error completing order:', error);
         res.status(500).json({ message: 'Internal server error' });
     }
-}; 
+};
+
+module.exports = { completeOrder }; 

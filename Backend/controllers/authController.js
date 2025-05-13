@@ -1,121 +1,119 @@
-// const bcrypt = require("bcryptjs");
-// const jwt = require("jsonwebtoken");
-// const { validationResult } = require("express-validator");
-// const db = require("../config/db");
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
+const { validationResult } = require("express-validator");
+const pool = require("../config/database");
+const sendVerificationEmail = require("../utils/sendVerificationEmail");
 
-// console.log("✅ authController.js loaded");
-// exports.register = (req, res) => {
-//     const { name, email, password } = req.body;
+const register = async (req, res) => {
+    try {
+        const { name, email, password } = req.body;
 
-//     console.log("🔹 Registration request received:", { name, email });
+        // Check if user already exists
+        const [existingUsers] = await pool.query(
+            'SELECT * FROM users WHERE email = ?',
+            [email]
+        );
 
-//     const errors = validationResult(req);
-//     if (!errors.isEmpty()) {
-//         return res.status(400).json({ success: false, errors: errors.array() });
-//     }
+        if (existingUsers.length > 0) {
+            return res.status(400).json({ message: 'User already exists' });
+        }
 
-//     const checkUserSql = "SELECT * FROM users WHERE email = ?";
-//     db.query(checkUserSql, [email], (err, users) => {
-//         if (err) {
-//             console.error("❌ DB error during email check:", err);
-//             return res.status(500).json({ success: false, message: "Database error" });
-//         }
+        // Hash password
+        const hashedPassword = await bcrypt.hash(password, 10);
 
-//         if (users.length > 0) {
-//             return res.status(400).json({ success: false, message: "Email already exists." });
-//         }
+        // Insert new user with verified: false
+        const [result] = await pool.query(
+            'INSERT INTO users (email, password, name, verified) VALUES (?, ?, ?, ?)',
+            [email, hashedPassword, name, false]
+        );
 
-//         bcrypt.hash(password, 10, (err, hashedPassword) => {
-//             if (err) {
-//                 console.error("❌ Hashing error:", err);
-//                 return res.status(500).json({ success: false, message: "Error hashing password" });
-//             }
+        // Generate verification token (JWT)
+        const verificationToken = jwt.sign(
+            { email },
+            process.env.JWT_SECRET,
+            { expiresIn: '1d' }
+        );
 
-//             const insertUserSql = "INSERT INTO users (name, email, password) VALUES (?, ?, ?)";
-//             db.query(insertUserSql, [name, email, hashedPassword], (err, result) => {
-//                 if (err) {
-//                     console.error("❌ Error inserting user:", err);
-//                     return res.status(500).json({ success: false, message: "Database error (user insert)" });
-//                 }
+        // Send verification email
+        await sendVerificationEmail(email, verificationToken);
 
-//                 const userId = result.insertId;
-//                 console.log("🆔 Inserted User ID:", userId);
+        res.status(201).json({ message: 'User registered successfully. Please check your email to verify your account.' });
+    } catch (error) {
+        console.error('Registration error:', error);
+        res.status(500).json({ message: 'Internal server error' });
+    }
+};
 
-//                 const insertRewardSql = `
-//                     INSERT INTO reward_points (user_id, points_balance, total_points_earned)
-//                     VALUES (?, 10, 10)
-//                 `;
-//                 console.log("🧪 SQL:", insertRewardSql);
-//                 console.log("🧪 Params:", [userId]);
+const verifyEmail = async (req, res) => {
+    try {
+        const { token } = req.query;
+        if (!token) return res.status(400).json({ message: 'Invalid or missing token.' });
+        let email;
+        try {
+            const decoded = jwt.verify(token, process.env.JWT_SECRET);
+            email = decoded.email;
+        } catch (err) {
+            return res.status(400).json({ message: 'Invalid or expired token.' });
+        }
+        // Set verified = true
+        await pool.query('UPDATE users SET verified = ? WHERE email = ?', [true, email]);
+        res.json({ message: 'Email verified successfully. You can now log in.' });
+    } catch (error) {
+        console.error('Email verification error:', error);
+        res.status(500).json({ message: 'Internal server error' });
+    }
+};
 
-//                 db.query(insertRewardSql, [userId], (err, rewardResult) => {
-//                     if (err) {
-//                         console.error("❌ Reward point insert error:", err.sqlMessage || err.message);
-//                         return res.status(500).json({
-//                             success: false,
-//                             message: "User created, but failed to assign reward points.",
-//                         });
-//                     }
+const login = async (req, res) => {
+    try {
+        const { email, password } = req.body;
 
-//                     console.log("🎉 Reward points inserted:", rewardResult);
-//                     res.status(201).json({
-//                         success: true,
-//                         message: "✅ User registered successfully with 10 reward points!",
-//                     });
-//                 });
-//             });
-//         });
-//     });
-// };
+        // Get user by email
+        const [users] = await pool.query(
+            'SELECT * FROM users WHERE email = ?',
+            [email]
+        );
 
+        if (users.length === 0) {
+            return res.status(401).json({ message: 'Invalid credentials' });
+        }
 
-// // Login User
-// exports.login = (req, res) => {
-//     const { email, password } = req.body;
+        const user = users[0];
 
-//     console.log("🔹 Login request received for email:", email);
+        // Block login if not verified
+        if (!user.verified) {
+            return res.status(403).json({ message: 'Please verify your email before logging in.' });
+        }
 
-//     const sql = "SELECT * FROM users WHERE email = ?";
-//     db.query(sql, [email], (err, users) => {
-//         if (err) {
-//             console.error("❌ Database error:", err);
-//             return res.status(500).json({ message: "Database error", error: err });
-//         }
+        // Compare password
+        const isValidPassword = await bcrypt.compare(password, user.password);
+        if (!isValidPassword) {
+            return res.status(401).json({ message: 'Invalid credentials' });
+        }
 
-//         if (users.length === 0) {
-//             console.log("❌ User not found.");
-//             return res.status(401).json({ message: "User not found!" });
-//         }
+        // Generate token
+        const token = jwt.sign(
+            { id: user.id },
+            process.env.JWT_SECRET,
+            { expiresIn: '1h' }
+        );
 
-//         const storedPassword = users[0].password;
-//         console.log("🔹 Entered password:", password);
-//         console.log("🔹 Stored hashed password in DB:", storedPassword);
+        res.json({
+            token,
+            user: {
+                id: user.id,
+                email: user.email,
+                name: user.name
+            }
+        });
+    } catch (error) {
+        console.error('Login error:', error);
+        res.status(500).json({ message: 'Internal server error' });
+    }
+};
 
-//         // 🔹 Remove extra hashing, only compare raw password with stored hash
-//         bcrypt.compare(password, storedPassword, (err, match) => {
-//             if (err) {
-//                 console.error("❌ Bcrypt error during comparison:", err);
-//                 return res.status(500).json({ message: "Error verifying password." });
-//             }
-
-//             if (!match) {
-//                 console.log("❌ Password mismatch!");
-//                 return res.status(401).json({ message: "Invalid credentials! Passwords do not match." });
-//             }
-
-//             console.log("✅ Password match. Generating token...");
-
-//             const token = jwt.sign({ id: users[0].id }, process.env.JWT_SECRET, { expiresIn: "1h" });
-
-//             res.json({
-//                 message: "✅ Login successful!",
-//                 token,
-//                 user: {
-//                     id: users[0].id,
-//                     name: users[0].name,
-//                     email: users[0].email,
-//                 },
-//             });
-//         });
-//     });
-// };
+module.exports = {
+    register,
+    login,
+    verifyEmail
+};

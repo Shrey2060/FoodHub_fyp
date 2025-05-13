@@ -1,27 +1,52 @@
-const db = require("../config/db");
+const pool = require('../config/database');
 
-// Save Chat Message to Database
-const saveMessage = (chatRoomId, senderId, receiverId, message) => {
-    return new Promise((resolve, reject) => {
-        const query = `
-            INSERT INTO chat_messages (chat_room_id, sender_id, receiver_id, message, created_at) 
-            VALUES (?, ?, ?, ?, NOW())`;
-        db.query(query, [chatRoomId, senderId, receiverId, message], (err, results) => {
-            if (err) reject(err);
-            else resolve(results);
-        });
-    });
+const saveMessage = async (messageData) => {
+  try {
+    const { room, message, sender, timestamp } = messageData;
+    
+    // Insert the message
+    const [result] = await pool.query(
+      'INSERT INTO messages (room, message, sender, timestamp) VALUES (?, ?, ?, ?)',
+      [room, message, sender, timestamp]
+    );
+
+    // Get the inserted message
+    const [messages] = await pool.query(
+      'SELECT * FROM messages WHERE id = ?',
+      [result.insertId]
+    );
+
+    return messages[0];
+  } catch (error) {
+    throw new Error('Database error');
+  }
 };
 
-// Fetch Chat Messages by Room ID
-const getMessagesByRoom = (chatRoomId) => {
-    return new Promise((resolve, reject) => {
-        const query = `SELECT * FROM chat_messages WHERE chat_room_id = ? ORDER BY created_at ASC`;
-        db.query(query, [chatRoomId], (err, results) => {
-            if (err) reject(err);
-            else resolve(results);
-        });
-    });
+const getMessagesByRoom = async (room) => {
+  try {
+    const [messages] = await pool.query(
+      'SELECT * FROM messages WHERE room = ? ORDER BY timestamp ASC',
+      [room]
+    );
+    return messages;
+  } catch (error) {
+    throw new Error('Database error');
+  }
 };
 
-module.exports = { saveMessage, getMessagesByRoom };
+const getRooms = async () => {
+  try {
+    const [rooms] = await pool.query(
+      'SELECT DISTINCT room FROM messages ORDER BY room ASC'
+    );
+    return rooms.map(room => room.room);
+  } catch (error) {
+    throw new Error('Database error');
+  }
+};
+
+module.exports = {
+  saveMessage,
+  getMessagesByRoom,
+  getRooms
+};

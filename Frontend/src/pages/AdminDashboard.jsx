@@ -3,15 +3,86 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'react-toastify';
 import { getStatusColor } from '../utils/statusUtils';
-import RestaurantWallet from '../components/RestaurantWallet/RestaurantWallet';
 import './AdminDashboard.css';
+
+// Move SaveConfirmationDialog outside the main component
+const SaveConfirmationDialog = ({ isOpen, orderId, orderData, onConfirm, onCancel, loading, error }) => {
+    if (!isOpen) return null;
+
+    const handleConfirmClick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onConfirm();
+    };
+
+    return (
+        <div className="dialog-overlay" onClick={onCancel}>
+            <div className="dialog-content" onClick={e => e.stopPropagation()}>
+                <div className="dialog-header">
+                    <h2>Confirm Order Update</h2>
+                    <button 
+                        className="close-button"
+                        onClick={onCancel}
+                        type="button"
+                    >
+                        ×
+                    </button>
+                </div>
+                <div className="dialog-body">
+                    <div className="order-info">
+                        <p className="order-id">Order #{orderId}</p>
+                        <div className="changes-summary">
+                            <h3>Changes Summary</h3>
+                            <div className="changes-list">
+                                <div className="change-item">
+                                    <span className="change-label">Status:</span>
+                                    <span className="change-value">{orderData.status}</span>
+                                </div>
+                                <div className="change-item">
+                                    <span className="change-label">Contact Number:</span>
+                                    <span className="change-value">{orderData.contact_number}</span>
+                                </div>
+                                <div className="change-item">
+                                    <span className="change-label">Payment Method:</span>
+                                    <span className="change-value">{orderData.payment_method}</span>
+                                </div>
+                                <div className="change-item">
+                                    <span className="change-label">Delivery Address:</span>
+                                    <span className="change-value">{orderData.delivery_address}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {error && <div className="dialog-error" style={{color: 'red', marginTop: 10}}>{error}</div>}
+                </div>
+                <div className="dialog-footer">
+                    <button 
+                        className="dialog-button cancel"
+                        onClick={onCancel}
+                        type="button"
+                        disabled={loading}
+                    >
+                        Cancel
+                    </button>
+                    <button 
+                        className="dialog-button save"
+                        onClick={handleConfirmClick}
+                        type="button"
+                        disabled={loading}
+                    >
+                        {loading ? 'Saving...' : 'Confirm Changes'}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
 
 const AdminDashboard = () => {
     const [activeTab, setActiveTab] = useState('products');
     const [products, setProducts] = useState([]);
     const [orders, setOrders] = useState([]);
     const [users, setUsers] = useState([]);
-    const [subscriptions, setSubscriptions] = useState([]);
     const [preOrders, setPreOrders] = useState([]);
     const [loading, setLoading] = useState(true);
     const [orderFilter, setOrderFilter] = useState('all');
@@ -65,9 +136,6 @@ const AdminDashboard = () => {
         userDetails: null
     });
 
-    // Add state for subscription management
-    const [userSubscriptions, setUserSubscriptions] = useState({});
-
     // Add state for save confirmation dialog
     const [saveConfirmationDialog, setSaveConfirmationDialog] = useState({
         isOpen: false,
@@ -76,6 +144,26 @@ const AdminDashboard = () => {
     });
 
     const [isAddingUser, setIsAddingUser] = useState(false);
+
+    // Add pre-order filter state
+    const [preOrderFilter, setPreOrderFilter] = useState('all');
+    const [selectedPreOrder, setSelectedPreOrder] = useState(null);
+    const [preOrderFormData, setPreOrderFormData] = useState({
+        order_status: '',
+        delivery_address: '',
+        scheduled_date: '',
+        delivery_time: ''
+    });
+
+    // Filtered pre-orders
+    const filteredPreOrders = preOrders.filter(order => {
+        if (preOrderFilter === 'all') return true;
+        return order.order_status === preOrderFilter;
+    });
+
+    // Add loading state for save confirmation dialog
+    const [saveLoading, setSaveLoading] = useState(false);
+    const [saveError, setSaveError] = useState("");
 
     // Helper function to format currency in Nepali Rupees
     const formatCurrency = (amount) => {
@@ -210,46 +298,6 @@ const AdminDashboard = () => {
                 const response = await axios.get('http://localhost:5000/api/auth/admin/users', { headers });
                 console.log('Users response:', response.data);
                 setUsers(response.data.users || []);
-                
-                // Fetch subscriptions for each user
-                const subsResponse = await axios.get('http://localhost:5000/api/subscriptions/admin/subscriptions', { headers });
-                console.log('Subscriptions response:', subsResponse.data);
-                
-                if (subsResponse.data.success) {
-                    const subscriptionMap = {};
-                    subsResponse.data.subscriptions.forEach(sub => {
-                        subscriptionMap[sub.user_id] = sub;
-                    });
-                    setUserSubscriptions(subscriptionMap);
-                    setSubscriptions(subsResponse.data.subscriptions);
-                }
-            } else if (activeTab === 'subscriptions') {
-                console.log('Fetching admin subscriptions...');
-                console.log('Using token:', token);
-                
-                try {
-                    const response = await axios.get('http://localhost:5000/api/subscriptions/admin/subscriptions', { headers });
-                    console.log('Full admin subscriptions response:', response);
-                    console.log('Admin subscriptions response data:', response.data);
-                    
-                    if (response.data.success) {
-                        console.log('Setting subscriptions state with:', response.data.subscriptions);
-                        if (Array.isArray(response.data.subscriptions)) {
-                            setSubscriptions(response.data.subscriptions);
-                            console.log('Subscriptions state set successfully:', response.data.subscriptions.length);
-                        } else {
-                            console.error('Subscriptions data is not an array:', response.data.subscriptions);
-                            setSubscriptions([]);
-                        }
-                    } else {
-                        console.error('Failed to fetch subscriptions - success is false:', response.data);
-                        toast.error('Failed to fetch subscriptions');
-                    }
-                } catch (subscriptionError) {
-                    console.error('Error in subscription fetch:', subscriptionError);
-                    console.error('Error details:', subscriptionError.response?.data || 'No response data');
-                    toast.error('Failed to fetch subscriptions: ' + (subscriptionError.message || 'Unknown error'));
-                }
             }
         } catch (error) {
             console.error('Error fetching data:', error.response || error);
@@ -439,57 +487,6 @@ const AdminDashboard = () => {
         navigate('/login', { replace: true });
     };
 
-    const updateUserStatus = async (userId, isActive) => {
-        try {
-            const token = sessionStorage.getItem('authToken');
-            await axios.put(
-                `http://localhost:5000/api/admin/users/${userId}`,
-                { is_active: isActive },
-                { headers: { Authorization: `Bearer ${token}` } }
-            );
-            toast.success(`User ${isActive ? 'activated' : 'deactivated'} successfully`);
-            fetchData();
-        } catch (error) {
-            toast.error('Failed to update user status');
-            console.error('Error updating user:', error);
-        }
-    };
-
-    const handleCancelSubscription = async (subscriptionId) => {
-        if (window.confirm('Are you sure you want to cancel this subscription?')) {
-            try {
-                const token = sessionStorage.getItem('authToken');
-                await axios.put(
-                    `http://localhost:5000/api/subscriptions/admin/${subscriptionId}/cancel`,
-                    {},
-                    { headers: { Authorization: `Bearer ${token}` } }
-                );
-                toast.success('Subscription cancelled successfully');
-                fetchData();
-            } catch (error) {
-                console.error('Error cancelling subscription:', error);
-                toast.error(error.response?.data?.message || 'Failed to cancel subscription');
-            }
-        }
-    };
-
-    const handleDeleteSubscription = async (subscriptionId) => {
-        if (window.confirm('Are you sure you want to delete this subscription? This action cannot be undone.')) {
-            try {
-                const token = sessionStorage.getItem('authToken');
-                await axios.delete(
-                    `http://localhost:5000/api/subscriptions/admin/${subscriptionId}`,
-                    { headers: { Authorization: `Bearer ${token}` } }
-                );
-                toast.success('Subscription deleted successfully');
-                fetchData();
-            } catch (error) {
-                console.error('Error deleting subscription:', error);
-                toast.error(error.response?.data?.message || 'Failed to delete subscription');
-            }
-        }
-    };
-
     const handleOrderEdit = (order) => {
         setSelectedOrder(order);
         setOrderFormData({
@@ -503,6 +500,8 @@ const AdminDashboard = () => {
 
     const handleOrderUpdate = async (e) => {
         e.preventDefault();
+        if (!selectedOrder) return;
+
         setSaveConfirmationDialog({
             isOpen: true,
             orderId: selectedOrder.id,
@@ -510,205 +509,19 @@ const AdminDashboard = () => {
         });
     };
 
-    const SaveConfirmationDialog = () => {
-        if (!saveConfirmationDialog.isOpen) return null;
-
-        const handleConfirmClick = async (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            // Close dialog immediately before the API call
-            setSaveConfirmationDialog({
-                isOpen: false,
-                orderId: null,
-                orderData: null
-            });
-            await confirmOrderUpdate();
-        };
-
-        const confirmOrderUpdate = async () => {
-            try {
-                const token = sessionStorage.getItem('authToken');
-                if (!token) {
-                    toast.error('Authentication required');
-                    return;
-                }
-
-                const response = await axios.put(
-                    `http://localhost:5000/api/admin/orders/${saveConfirmationDialog.orderId}`,
-                    saveConfirmationDialog.orderData,
-                    {
-                        headers: {
-                            'Authorization': `Bearer ${token}`,
-                            'Content-Type': 'application/json'
-                        }
-                    }
-                );
-
-                if (response.data.success) {
-                    // Reset form and selected order
-                    setSelectedOrder(null);
-                    setOrderFormData({
-                        status: '',
-                        contact_number: '',
-                        payment_method: '',
-                        delivery_address: '',
-                        payment_status: ''
-                    });
-                    
-                    // Show success message and refresh orders
-                    toast.success('Order updated successfully');
-                    await fetchOrders();
-                } else {
-                    toast.error(response.data.message || 'Failed to update order');
-                }
-            } catch (error) {
-                console.error('Error updating order:', error);
-                toast.error(error.response?.data?.message || 'Failed to update order');
-            }
-        };
-
-        const handleCancelClick = (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            setSaveConfirmationDialog({
-                isOpen: false,
-                orderId: null,
-                orderData: null
-            });
-        };
-
-        return (
-            <div className="dialog-overlay" onClick={handleCancelClick}>
-                <div className="dialog-content" onClick={e => e.stopPropagation()}>
-                    <div className="dialog-header">
-                        <h2>Confirm Order Update</h2>
-                        <button 
-                            className="close-button"
-                            onClick={handleCancelClick}
-                            type="button"
-                        >
-                            ×
-                        </button>
-                    </div>
-                    
-                    <div className="dialog-body">
-                        <div className="order-info">
-                            <p className="order-id">Order #{saveConfirmationDialog.orderId}</p>
-                            <div className="changes-summary">
-                                <h3>Changes Summary</h3>
-                                <div className="changes-list">
-                                    <div className="change-item">
-                                        <span className="change-label">Status:</span>
-                                        <span className="change-value">{saveConfirmationDialog.orderData.status}</span>
-                                    </div>
-                                    <div className="change-item">
-                                        <span className="change-label">Contact Number:</span>
-                                        <span className="change-value">{saveConfirmationDialog.orderData.contact_number}</span>
-                                    </div>
-                                    <div className="change-item">
-                                        <span className="change-label">Payment Method:</span>
-                                        <span className="change-value">{saveConfirmationDialog.orderData.payment_method}</span>
-                                    </div>
-                                    <div className="change-item">
-                                        <span className="change-label">Delivery Address:</span>
-                                        <span className="change-value">{saveConfirmationDialog.orderData.delivery_address}</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="dialog-footer">
-                        <button 
-                            className="dialog-button cancel"
-                            onClick={handleCancelClick}
-                            type="button"
-                        >
-                            Cancel
-                        </button>
-                        <button 
-                            className="dialog-button save"
-                            onClick={handleConfirmClick}
-                            type="button"
-                        >
-                            Confirm Changes
-                        </button>
-                    </div>
-                </div>
-            </div>
-        );
-    };
-
-    const handleUserCreate = async (e) => {
-        e.preventDefault();
-        try {
-            const token = sessionStorage.getItem('authToken');
-            const response = await axios.post(
-                'http://localhost:5000/api/auth/admin/create-user',
-                userFormData,
-                {
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json'
-                    }
-                }
-            );
-
-            if (response.data.success) {
-                toast.success('User created successfully');
-                setIsAddingUser(false);
-                setUserFormData({
-                    name: '',
-                    email: '',
-                    role: '',
-                    password: ''
-                });
-                // Refresh users list
-                const usersResponse = await axios.get('http://localhost:5000/api/auth/admin/users', {
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json'
-                    }
-                });
-                if (usersResponse.data.success) {
-                    setUsers(usersResponse.data.users);
-                }
-            } else {
-                toast.error(response.data.message || 'Failed to create user');
-            }
-        } catch (error) {
-            console.error('Error creating user:', error);
-            toast.error(error.response?.data?.message || 'Failed to create user');
-        }
-    };
-
-    const handleUserUpdate = async (e) => {
-        e.preventDefault();
+    const confirmOrderUpdate = async () => {
+        setSaveLoading(true);
+        setSaveError("");
         try {
             const token = sessionStorage.getItem('authToken');
             if (!token) {
-                toast.error('Authentication required');
+                setSaveError('Authentication required');
+                setSaveLoading(false);
                 return;
             }
-
-            console.log('Updating user with data:', {
-                userId: editingUser.id,
-                updates: {
-                    name: userFormData.name,
-                    email: userFormData.email,
-                    role: userFormData.role,
-                    ...(userFormData.password && { password: userFormData.password })
-                }
-            });
-
             const response = await axios.put(
-                `http://localhost:5000/api/auth/admin/edit-user/${editingUser.id}`,
-                {
-                    name: userFormData.name,
-                    email: userFormData.email,
-                    role: userFormData.role,
-                    ...(userFormData.password && { password: userFormData.password })
-                },
+                `http://localhost:5000/api/orders/admin/${saveConfirmationDialog.orderId}`,
+                saveConfirmationDialog.orderData,
                 {
                     headers: {
                         'Authorization': `Bearer ${token}`,
@@ -716,207 +529,30 @@ const AdminDashboard = () => {
                     }
                 }
             );
-
             if (response.data.success) {
-                toast.success('User updated successfully');
-                setEditingUser(null);
-                setUserFormData({
-                    name: '',
-                    email: '',
-                    role: '',
-                    password: ''
+                setSelectedOrder(null);
+                setOrderFormData({
+                    status: '',
+                    contact_number: '',
+                    payment_method: '',
+                    delivery_address: '',
+                    payment_status: ''
                 });
-                await fetchUsers();
+                toast.success('Order updated successfully');
+                setSaveConfirmationDialog({
+                    isOpen: false,
+                    orderId: null,
+                    orderData: null
+                });
+                await fetchOrders();
             } else {
-                toast.error(response.data.message || 'Failed to update user');
+                setSaveError(response.data.message || 'Failed to update order');
             }
         } catch (error) {
-            console.error('Error updating user:', error);
-            toast.error(error.response?.data?.message || 'Failed to update user');
+            setSaveError(error.response?.data?.message || 'Failed to update order');
+        } finally {
+            setSaveLoading(false);
         }
-    };
-
-    const handleUserFormChange = (e) => {
-        const { name, value } = e.target;
-        setUserFormData(prev => ({
-            ...prev,
-            [name]: value
-        }));
-    };
-
-    const handleUserEdit = (user) => {
-        setEditingUser(user);
-        setIsAddingUser(false);
-        setUserFormData({
-            name: user.name,
-            email: user.email,
-            role: user.role,
-            password: '' // Password field will be empty when editing
-        });
-    };
-
-    const handleUserDelete = (user) => {
-        setUserDeleteDialog({
-            isOpen: true,
-            userId: user.id,
-            userDetails: user
-        });
-    };
-
-    // Add a separate function to fetch users
-    const fetchUsers = async () => {
-        try {
-            const token = sessionStorage.getItem('authToken');
-            if (!token) {
-                toast.error('Authentication required');
-                return;
-            }
-
-            const response = await axios.get('http://localhost:5000/api/auth/admin/users', {
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                }
-            });
-
-            if (response.data.success) {
-                setUsers(response.data.users);
-            } else {
-                toast.error('Failed to fetch users');
-            }
-        } catch (error) {
-            console.error('Error fetching users:', error);
-            toast.error('Failed to fetch users');
-        }
-    };
-
-    const UserDeleteConfirmationDialog = () => {
-        if (!userDeleteDialog.isOpen) return null;
-
-        const handleConfirmDelete = async () => {
-            try {
-                const token = sessionStorage.getItem('authToken');
-                if (!token) {
-                    throw new Error('Authentication required');
-                }
-
-                console.log('Starting user deletion process...');
-                console.log('User ID to delete:', userDeleteDialog.userId);
-                console.log('User details:', userDeleteDialog.userDetails);
-
-                // Use the correct delete endpoint
-                const deleteEndpoint = `http://localhost:5000/api/auth/admin/delete-user/${userDeleteDialog.userId}`;
-                console.log('Sending delete request to:', deleteEndpoint);
-
-                const response = await axios.delete(
-                    deleteEndpoint,
-                    {
-                        headers: {
-                            'Authorization': `Bearer ${token}`,
-                            'Content-Type': 'application/json'
-                        }
-                    }
-                );
-
-                console.log('Delete response:', response);
-
-                if (response.data && response.data.success) {
-                    console.log('User deletion successful');
-                    
-                    // Update local state
-                    setUsers(prevUsers => {
-                        const updatedUsers = prevUsers.filter(user => user.id !== userDeleteDialog.userId);
-                        console.log('Updated users list:', updatedUsers);
-                        return updatedUsers;
-                    });
-                    
-                    // Close the dialog
-                    setUserDeleteDialog({
-                        isOpen: false,
-                        userId: null,
-                        userDetails: null
-                    });
-                    
-                    // Refresh the users list
-                    await fetchUsers();
-                    console.log('Users list refreshed after deletion');
-                    
-                    toast.success(`User ${userDeleteDialog.userDetails?.name || userDeleteDialog.userId} deleted successfully`);
-                } else {
-                    throw new Error(response.data?.message || 'Failed to delete user');
-                }
-            } catch (error) {
-                console.error('Detailed error information:', {
-                    message: error.message,
-                    response: error.response?.data,
-                    status: error.response?.status,
-                    statusText: error.response?.statusText,
-                    endpoint: deleteEndpoint
-                });
-
-                if (error.response?.status === 403) {
-                    toast.error('You do not have permission to delete this user');
-                } else if (error.response?.status === 404) {
-                    toast.error('User not found in database');
-                } else if (error.response?.status === 401) {
-                    toast.error('Authentication failed. Please log in again.');
-                } else {
-                    toast.error(
-                        error.response?.data?.message || 
-                        `Failed to permanently delete user ${userDeleteDialog.userDetails?.name || userDeleteDialog.userId}`
-                    );
-                }
-            }
-        };
-
-        return (
-            <div className="dialog-overlay">
-                <div className="dialog-content">
-                    <div className="dialog-header">
-                        <h2>Delete User</h2>
-                        <button 
-                            className="close-button"
-                            onClick={() => setUserDeleteDialog({
-                                isOpen: false,
-                                userId: null,
-                                userDetails: null
-                            })}
-                        >
-                            ×
-                        </button>
-                    </div>
-                    <div className="dialog-body">
-                        <p>Are you sure you want to delete this user?</p>
-                        {userDeleteDialog.userDetails && (
-                            <div className="user-summary">
-                                <p><strong>Name:</strong> {userDeleteDialog.userDetails.name}</p>
-                                <p><strong>Email:</strong> {userDeleteDialog.userDetails.email}</p>
-                                <p><strong>Role:</strong> {userDeleteDialog.userDetails.role}</p>
-                            </div>
-                        )}
-                        <p className="warning-text">This action cannot be undone!</p>
-                    </div>
-                    <div className="dialog-footer">
-                        <button 
-                            className="dialog-button cancel"
-                            onClick={() => setUserDeleteDialog({
-                                isOpen: false,
-                                userId: null,
-                                userDetails: null
-                            })}
-                        >
-                            Cancel
-                        </button>
-                        <button 
-                            className="dialog-button delete"
-                            onClick={handleConfirmDelete}
-                        >
-                            Delete
-                        </button>
-                    </div>
-                </div>
-            </div>
-        );
     };
 
     const DeleteConfirmationDialog = () => {
@@ -1059,6 +695,65 @@ const AdminDashboard = () => {
         );
     };
 
+    // Add or update this function for admin pre-order status update
+    const handleUpdatePreOrderStatus = async (preOrderId, newStatus) => {
+        try {
+            const token = sessionStorage.getItem('authToken');
+            await axios.put(
+                `http://localhost:5000/api/admin/pre-orders/${preOrderId}`,
+                { order_status: newStatus },
+                { headers: { Authorization: `Bearer ${token}` } }
+            );
+            toast.success('Pre-order status updated successfully');
+            fetchPreOrders();
+        } catch (error) {
+            toast.error('Failed to update pre-order status');
+            console.error('Error updating pre-order:', error);
+        }
+    };
+
+    // Add or update this function for admin pre-order delete
+    const handleDeletePreOrder = async (preOrderId) => {
+        try {
+            const token = sessionStorage.getItem('authToken');
+            await axios.delete(
+                `http://localhost:5000/api/admin/pre-orders/${preOrderId}`,
+                { headers: { Authorization: `Bearer ${token}` } }
+            );
+            toast.success('Pre-order deleted successfully');
+            fetchPreOrders();
+        } catch (error) {
+            toast.error('Failed to delete pre-order');
+            console.error('Error deleting pre-order:', error);
+        }
+    };
+
+    // Pre-order edit form submit
+    const handlePreOrderUpdate = async (e) => {
+        e.preventDefault();
+        if (!selectedPreOrder) return;
+        try {
+            const token = sessionStorage.getItem('authToken');
+            await axios.put(
+                `http://localhost:5000/api/admin/pre-orders/${selectedPreOrder.id}`,
+                preOrderFormData,
+                { headers: { Authorization: `Bearer ${token}` } }
+            );
+            setSelectedPreOrder(null);
+            setPreOrderFormData({
+                order_status: '',
+                delivery_address: '',
+                scheduled_date: '',
+                delivery_time: ''
+            });
+            toast.success('Pre-order updated successfully');
+            fetchPreOrders();
+        } catch (error) {
+            toast.error('Failed to update pre-order');
+            console.error('Error updating pre-order:', error);
+        }
+    };
+
     if (loading) {
         console.log('Rendering loading state');
         return (
@@ -1092,14 +787,6 @@ const AdminDashboard = () => {
                 <button className={`nav-button ${activeTab === 'products' ? 'active' : ''}`} onClick={() => setActiveTab('products')}>Products</button>
                 <button className={`nav-button ${activeTab === 'orders' ? 'active' : ''}`} onClick={() => setActiveTab('orders')}>Orders</button>
                 <button className={`nav-button ${activeTab === 'pre-orders' ? 'active' : ''}`} onClick={() => setActiveTab('pre-orders')}>Pre-Orders</button>
-                <button className={`nav-button ${activeTab === 'users' ? 'active' : ''}`} onClick={() => setActiveTab('users')}>Users</button>
-                <button className={`nav-button ${activeTab === 'subscriptions' ? 'active' : ''}`} onClick={() => setActiveTab('subscriptions')}>Subscriptions</button>
-                <button 
-                    className={`nav-button ${activeTab === 'wallet' ? 'active' : ''}`} 
-                    onClick={() => setActiveTab('wallet')}
-                >
-                    Wallet
-                </button>
             </nav>
 
             <main className="admin-content">
@@ -1109,17 +796,109 @@ const AdminDashboard = () => {
                 {activeTab === 'pre-orders' && (
                     <div className="pre-orders-section">
                         <h2>Pre-Orders Management</h2>
-                        <div className="pre-orders-list">
-                            {preOrders.length === 0 ? (
+                        {/* Pre-Order Filters */}
+                        <div className="order-filters">
+                            <select 
+                                value={preOrderFilter} 
+                                onChange={(e) => setPreOrderFilter(e.target.value)}
+                                className="status-filter"
+                            >
+                                <option value="all">All Pre-Orders</option>
+                                <option value="pending">Pending</option>
+                                <option value="confirmed">Confirmed</option>
+                                <option value="preparing">Preparing</option>
+                                <option value="ready">Ready</option>
+                                <option value="delivered">Delivered</option>
+                                <option value="cancelled">Cancelled</option>
+                            </select>
+                        </div>
+                        {/* Pre-Order Edit Form */}
+                        {selectedPreOrder && (
+                            <div className="order-edit-form-container">
+                                <form onSubmit={handlePreOrderUpdate} className="order-form">
+                                    <h3>Edit Pre-Order #{selectedPreOrder.id}</h3>
+                                    <div className="form-group">
+                                        <label>Status:</label>
+                                        <select
+                                            name="order_status"
+                                            value={preOrderFormData.order_status}
+                                            onChange={(e) => setPreOrderFormData({...preOrderFormData, order_status: e.target.value})}
+                                            required
+                                            className="form-control"
+                                        >
+                                            <option value="pending">Pending</option>
+                                            <option value="confirmed">Confirmed</option>
+                                            <option value="preparing">Preparing</option>
+                                            <option value="ready">Ready</option>
+                                            <option value="delivered">Delivered</option>
+                                            <option value="cancelled">Cancelled</option>
+                                        </select>
+                                    </div>
+                                    <div className="form-group">
+                                        <label>Delivery Address:</label>
+                                        <textarea
+                                            name="delivery_address"
+                                            value={preOrderFormData.delivery_address}
+                                            onChange={(e) => setPreOrderFormData({...preOrderFormData, delivery_address: e.target.value})}
+                                            required
+                                            className="form-control"
+                                        />
+                                    </div>
+                                    <div className="form-group">
+                                        <label>Scheduled Date:</label>
+                                        <input
+                                            type="date"
+                                            name="scheduled_date"
+                                            value={preOrderFormData.scheduled_date}
+                                            onChange={(e) => setPreOrderFormData({...preOrderFormData, scheduled_date: e.target.value})}
+                                            required
+                                            className="form-control"
+                                        />
+                                    </div>
+                                    <div className="form-group">
+                                        <label>Delivery Time:</label>
+                                        <input
+                                            type="time"
+                                            name="delivery_time"
+                                            value={preOrderFormData.delivery_time}
+                                            onChange={(e) => setPreOrderFormData({...preOrderFormData, delivery_time: e.target.value})}
+                                            required
+                                            className="form-control"
+                                        />
+                                    </div>
+                                    <div className="form-actions">
+                                        <button type="submit" className="btn-save">Save Changes</button>
+                                        <button 
+                                            type="button" 
+                                            className="btn-cancel"
+                                            onClick={() => {
+                                                setSelectedPreOrder(null);
+                                                setPreOrderFormData({
+                                                    order_status: '',
+                                                    delivery_address: '',
+                                                    scheduled_date: '',
+                                                    delivery_time: ''
+                                                });
+                                            }}
+                                        >
+                                            Cancel
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+                        )}
+                        {/* Pre-Orders List */}
+                        <div className="orders-list">
+                            {filteredPreOrders.length === 0 ? (
                                 <div className="no-pre-orders">
                                     <p>No pre-orders found.</p>
                                 </div>
                             ) : (
-                                preOrders.map((order) => (
+                                filteredPreOrders.map((order) => (
                                     <div key={`pre-order-${order.id}`} className="order-card">
                                         <div className="order-header">
                                             <h3>Pre-Order #{order.id}</h3>
-                                            <span className={`status ${getStatusColor(order.order_status || 'pending')}`}>
+                                            <span className={`status-badge ${getStatusColor(order.order_status || 'pending')}`}>
                                                 {order.order_status || 'pending'}
                                             </span>
                                         </div>
@@ -1133,7 +912,7 @@ const AdminDashboard = () => {
                                                 <p><strong>Special Instructions:</strong> {order.special_instructions}</p>
                                             )}
                                         </div>
-                                        <div className="pre-order-items">
+                                        <div className="order-items">
                                             <h4>Order Items:</h4>
                                             {order.items.map((item, index) => (
                                                 <div key={`item-${order.id}-${index}`} className="order-item">
@@ -1143,25 +922,29 @@ const AdminDashboard = () => {
                                                 </div>
                                             ))}
                                         </div>
-                                        <div className="pre-order-actions">
-                                            <select
-                                                value={order.order_status}
-                                                onChange={(e) => handleUpdatePreOrderStatus(order.id, e.target.value)}
-                                                className="status-select"
-                                            >
-                                                <option value="pending">Pending</option>
-                                                <option value="confirmed">Confirmed</option>
-                                                <option value="preparing">Preparing</option>
-                                                <option value="ready">Ready</option>
-                                                <option value="delivered">Delivered</option>
-                                                <option value="cancelled">Cancelled</option>
-                                            </select>
-                                            <button
-                                                className="delete-button"
+                                        <div className="order-actions">
+                                            <button 
+                                                className="btn-edit"
                                                 onClick={() => {
-                                                    console.log('Delete button clicked for order:', order); // Debug log
-                                                    handleDeletePreOrder(order.id);
+                                                    setSelectedPreOrder(order);
+                                                    setPreOrderFormData({
+                                                        order_status: order.order_status,
+                                                        delivery_address: order.delivery_address,
+                                                        scheduled_date: order.scheduled_date ? order.scheduled_date.split('T')[0] : '',
+                                                        delivery_time: order.delivery_time
+                                                    });
                                                 }}
+                                            >
+                                                Edit
+                                            </button>
+                                            <button 
+                                                className="btn-delete"
+                                                onClick={() => setDeleteDialog({
+                                                    isOpen: true,
+                                                    orderId: order.id,
+                                                    orderDetails: order
+                                                })}
+                                                disabled={!(order.order_status === 'delivered' || order.order_status === 'cancelled')}
                                             >
                                                 Delete
                                             </button>
@@ -1454,7 +1237,12 @@ const AdminDashboard = () => {
                                         </button>
                                         <button 
                                             className="btn-delete"
-                                            onClick={() => handleOrderDelete(order)}
+                                            onClick={() => setDeleteDialog({
+                                                isOpen: true,
+                                                orderId: order.id,
+                                                orderDetails: order
+                                            })}
+                                            disabled={order.status !== 'completed'}
                                         >
                                             Delete
                                         </button>
@@ -1462,280 +1250,29 @@ const AdminDashboard = () => {
                                 </div>
                             ))}
                         </div>
-                    </div>
-                )}
-
-                {activeTab === 'users' && (
-                    <div className="users-section">
-                        <h2>Manage Users</h2>
-                        
-                        {/* Add User Button */}
-                        {!isAddingUser && !editingUser && (
-                            <button 
-                                className="add-user-btn"
-                                onClick={() => {
-                                    setIsAddingUser(true);
-                                    setUserFormData({
-                                        name: '',
-                                        email: '',
-                                        role: '',
-                                        password: ''
-                                    });
-                                }}
-                            >
-                                Add New User
-                            </button>
-                        )}
-
-                        {/* User Form (Add/Edit) */}
-                        {(isAddingUser || editingUser) && (
-                            <div className="user-form-container">
-                                <form onSubmit={editingUser ? handleUserUpdate : handleUserCreate} className="user-form">
-                                    <h3>{editingUser ? 'Edit User' : 'Add New User'}</h3>
-                                    <div className="form-group">
-                                        <label>Name:</label>
-                                        <input
-                                            type="text"
-                                            name="name"
-                                            value={userFormData.name}
-                                            onChange={handleUserFormChange}
-                                            required
-                                            placeholder="Enter user name"
-                                        />
-                                    </div>
-                                    <div className="form-group">
-                                        <label>Email:</label>
-                                        <input
-                                            type="email"
-                                            name="email"
-                                            value={userFormData.email}
-                                            onChange={handleUserFormChange}
-                                            required
-                                            placeholder="Enter email address"
-                                        />
-                                    </div>
-                                    <div className="form-group">
-                                        <label>Role:</label>
-                                        <select
-                                            name="role"
-                                            value={userFormData.role}
-                                            onChange={handleUserFormChange}
-                                            required
-                                        >
-                                            <option value="">Select Role</option>
-                                            <option value="user">User</option>
-                                            <option value="admin">Admin</option>
-                                        </select>
-                                    </div>
-                                    <div className="form-group">
-                                        <label>{editingUser ? 'New Password (leave blank to keep current):' : 'Password:'}</label>
-                                        <input
-                                            type="password"
-                                            name="password"
-                                            value={userFormData.password}
-                                            onChange={handleUserFormChange}
-                                            placeholder={editingUser ? "Enter new password (optional)" : "Enter password"}
-                                            {...(!editingUser && { required: true })}
-                                        />
-                                    </div>
-                                    <div className="form-actions">
-                                        <button type="submit" className="btn-save">
-                                            {editingUser ? 'Save Changes' : 'Add User'}
-                                        </button>
-                                        <button 
-                                            type="button" 
-                                            className="btn-cancel"
-                                            onClick={() => {
-                                                setIsAddingUser(false);
-                                                setEditingUser(null);
-                                                setUserFormData({
-                                                    name: '',
-                                                    email: '',
-                                                    role: '',
-                                                    password: ''
-                                                });
-                                            }}
-                                        >
-                                            Cancel
-                                        </button>
-                                    </div>
-                                </form>
-                            </div>
-                        )}
-
-                        {/* Users List */}
-                        <div className="users-list">
-                            {users.map(user => (
-                                <div key={user.id} className={`user-card ${user.is_active ? 'active' : 'inactive'}`}>
-                                    <div className="user-info">
-                                        <h3>{user.name}</h3>
-                                        <p><strong>Email:</strong> {user.email}</p>
-                                        <p><strong>Role:</strong> <span className={`role-badge ${user.role}`}>{user.role}</span></p>
-                                        <p><strong>Status:</strong> 
-                                            <span className={`status-badge ${user.is_active ? 'active' : 'inactive'}`}>
-                                                {user.is_active ? 'Active' : 'Inactive'}
-                                            </span>
-                                        </p>
-                                        <p><strong>Reward Points:</strong> {user.reward_points}</p>
-                                        {user.has_subscription && (
-                                            <p><span className="subscription-badge">Active Subscription</span></p>
-                                        )}
-                                        <p><strong>Joined:</strong> {new Date(user.created_at).toLocaleDateString()}</p>
-                                    </div>
-                                    <div className="user-actions">
-                                        <button
-                                            className="btn-edit"
-                                            onClick={() => handleUserEdit(user)}
-                                        >
-                                            Edit
-                                        </button>
-                                        <button
-                                            className={`btn-toggle-status ${user.is_active ? 'deactivate' : 'activate'}`}
-                                            onClick={() => handleToggleUserStatus(user.id)}
-                                            disabled={user.id === parseInt(sessionStorage.getItem('userId'))}
-                                        >
-                                            {user.is_active ? 'Deactivate' : 'Activate'}
-                                        </button>
-                                        <button
-                                            className="btn-delete"
-                                            onClick={() => handleUserDelete(user)}
-                                            disabled={user.id === parseInt(sessionStorage.getItem('userId'))}
-                                        >
-                                            Delete
-                                        </button>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-
-                        {/* User Delete Confirmation Dialog */}
-                        {userDeleteDialog.isOpen && <UserDeleteConfirmationDialog />}
-                    </div>
-                )}
-
-                {activeTab === 'subscriptions' && (
-                    <div className="subscriptions-section">
-                        <h2>Subscriptions Management</h2>
-                        <div className="subscriptions-header">
-                            <div className="subscription-stats">
-                                <div className="stat-card">
-                                    <h3>Total Subscriptions</h3>
-                                    <p>{subscriptions.length}</p>
-                                </div>
-                                <div className="stat-card">
-                                    <h3>Active Subscriptions</h3>
-                                    <p>{subscriptions.filter(sub => sub.status === 'active').length}</p>
-                                </div>
-                                <div className="stat-card">
-                                    <h3>Monthly Revenue</h3>
-                                    <p>{formatCurrency(subscriptions.reduce((total, sub) => 
-                                        sub.status === 'active' ? total + parseFloat(sub.price) : total, 0
-                                    ))}</p>
-                                </div>
-                            </div>
-                        </div>
-                        <button 
-                            className="refresh-subscriptions-btn"
-                            onClick={() => {
-                                setLoading(true);
-                                fetchData().then(() => setLoading(false));
-                            }}
-                        >
-                            Refresh Subscriptions
-                        </button>
-                        <div className="subscriptions-list">
-                            {subscriptions.length === 0 ? (
-                                <div className="no-subscriptions">
-                                    <p>No subscriptions found.</p>
-                                </div>
-                            ) : (
-                                subscriptions.map((subscription) => (
-                                    <div key={`subscription-${subscription.id}`} className="subscription-card">
-                                        <div className="subscription-header">
-                                            <div className="subscription-title">
-                                                <h3>Subscription #{subscription.id}</h3>
-                                                <div className="status-badges">
-                                                    <span className={`status-badge ${subscription.status}`}>
-                                                        {subscription.status}
-                                                    </span>
-                                                    <span className={`payment-status ${subscription.payment_status}`}>
-                                                        {subscription.payment_status}
-                                                    </span>
-                                                </div>
-                                            </div>
-                                            <div className="subscription-actions">
-                                                {subscription.status === 'active' && (
-                                                    <button
-                                                        className="cancel-button"
-                                                        onClick={() => handleCancelSubscription(subscription.id)}
-                                                    >
-                                                        Cancel Subscription
-                                                    </button>
-                                                )}
-                                                <button
-                                                    className="delete-button"
-                                                    onClick={() => handleDeleteSubscription(subscription.id)}
-                                                >
-                                                    Delete
-                                                </button>
-                                            </div>
-                                        </div>
-                                        <div className="subscription-details">
-                                            <div className="user-info">
-                                                <h4>User Information</h4>
-                                                <p><strong>Name:</strong> {subscription.user_name}</p>
-                                                <p><strong>Email:</strong> {subscription.user_email}</p>
-                                                <p><strong>User ID:</strong> {subscription.user_id}</p>
-                                            </div>
-                                            <div className="plan-info">
-                                                <h4>Plan Details</h4>
-                                                <p><strong>Plan:</strong> {subscription.plan_name}</p>
-                                                <p><strong>Price:</strong> {formatCurrency(subscription.price)}</p>
-                                                <p><strong>Duration:</strong> {subscription.duration}</p>
-                                                <p><strong>Payment Method:</strong> {subscription.payment_method || 'N/A'}</p>
-                                                {subscription.transaction_id && (
-                                                    <p><strong>Transaction ID:</strong> {subscription.transaction_id}</p>
-                                                )}
-                                            </div>
-                                            <div className="subscription-dates">
-                                                <h4>Subscription Period</h4>
-                                                <p><strong>Start Date:</strong> {new Date(subscription.start_date).toLocaleDateString()}</p>
-                                                <p><strong>Next Billing:</strong> {new Date(subscription.next_billing_date).toLocaleDateString()}</p>
-                                                {subscription.end_date && (
-                                                    <p><strong>End Date:</strong> {new Date(subscription.end_date).toLocaleDateString()}</p>
-                                                )}
-                                            </div>
-                                            <div className="features">
-                                                <h4>Plan Features</h4>
-                                                <ul>
-                                                    {subscription.features ? 
-                                                        (Array.isArray(subscription.features) 
-                                                            ? subscription.features 
-                                                            : subscription.features.split(',')
-                                                        ).map((feature, index) => (
-                                                            <li key={index}>{feature}</li>
-                                                        ))
-                                                    : <li>No features listed</li>}
-                                                </ul>
-                                            </div>
-                                        </div>
-                                    </div>
-                                ))
-                            )}
-                        </div>
-                    </div>
-                )}
-
-                {activeTab === 'wallet' && (
-                    <div className="wallet-section">
-                        <RestaurantWallet />
                     </div>
                 )}
             </main>
 
             {deleteDialog.isOpen && <DeleteConfirmationDialog />}
-            {userDeleteDialog.isOpen && <UserDeleteConfirmationDialog />}
-            {saveConfirmationDialog.isOpen && <SaveConfirmationDialog />}
+            
+            {/* Update the SaveConfirmationDialog usage */}
+            <SaveConfirmationDialog
+                isOpen={saveConfirmationDialog.isOpen}
+                orderId={saveConfirmationDialog.orderId}
+                orderData={saveConfirmationDialog.orderData}
+                onConfirm={confirmOrderUpdate}
+                onCancel={() => {
+                    setSaveConfirmationDialog({
+                        isOpen: false,
+                        orderId: null,
+                        orderData: null
+                    });
+                    setSaveError("");
+                }}
+                loading={saveLoading}
+                error={saveError}
+            />
         </div>
     );
 };

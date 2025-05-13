@@ -2,8 +2,9 @@ import React, { useState, useEffect, memo } from 'react';
 import axios from 'axios';
 import { toast } from 'react-toastify';
 import { useAuth } from '../../contexts/AuthContext';
-import Layout from '../Layout/Layout';
+import Header from '../Header';
 import './FoodBundles.css';
+import { useNavigate } from 'react-router-dom';
 
 // Simple LoadingSpinner component
 const LoadingSpinner = () => (
@@ -92,7 +93,7 @@ const defaultBundles = [
         name: "Student Value Pack",
         price: 499.99,
         originalPrice: 699.99,
-        imageUrl: "/images/bundles/student-bundle.jpg",
+        imageUrl: "https://m.media-amazon.com/images/I/81FfpLMWNfL.jpg",
         items: [
             { name: "Regular Burger", quantity: 2 },
             { name: "Medium French Fries", quantity: 1 },
@@ -110,7 +111,7 @@ const defaultBundles = [
         name: "Family Feast Bundle",
         price: 999.99,
         originalPrice: 1299.99,
-        imageUrl: "/images/bundles/family-bundle.jpg",
+        imageUrl: "https://wgmeatbox.com/wp-content/uploads/2020/10/family-bundle-2.jpg",
         items: [
             { name: "Premium Burger", quantity: 4 },
             { name: "Large French Fries", quantity: 2 },
@@ -128,7 +129,7 @@ const defaultBundles = [
         name: "Party Pack Special",
         price: 1499.99,
         originalPrice: 1999.99,
-        imageUrl: "/images/bundles/party-bundle.jpg",
+        imageUrl: "https://www.shutterstock.com/image-photo/buffet-table-scene-take-out-260nw-1745914352.jpg",
         items: [
             { name: "Signature Burger", quantity: 6 },
             { name: "Large French Fries", quantity: 3 },
@@ -150,6 +151,7 @@ const FoodBundles = () => {
     const [orderProcessing, setOrderProcessing] = useState(false);
     const [currentExperience, setCurrentExperience] = useState(null);
     const { user } = useAuth();
+    const navigate = useNavigate();
 
     useEffect(() => {
         // Debug user information
@@ -322,17 +324,19 @@ const FoodBundles = () => {
 
     if (loading) {
         return (
-            <Layout>
+            <>
+                <Header />
                 <div className="food-bundles-loading">
                     <LoadingSpinner />
                     <p>Loading delicious food bundles...</p>
                 </div>
-            </Layout>
+            </>
         );
     }
 
     return (
-        <Layout>
+        <>
+            <Header />
             <div className="food-bundles-container">
                 <div className="content-wrapper">
                     <div className="bundles-header">
@@ -356,23 +360,16 @@ const FoodBundles = () => {
             {currentExperience && (
                 <div className="experience-modal">
                     <div className="modal-content">
-                        <button className="close-button" onClick={closeExperience}>
-                            ×
-                        </button>
+                        <button className="close-button" onClick={closeExperience}>×</button>
                         <h2>{currentExperience.title}</h2>
                         <p>{currentExperience.description}</p>
                         <div className="modal-actions">
-                            <button 
-                                className="btn-primary"
-                                onClick={closeExperience}
-                            >
-                                Got it!
-                            </button>
+                            <button className="btn-primary" onClick={closeExperience}>Got it!</button>
                         </div>
                     </div>
                 </div>
             )}
-        </Layout>
+        </>
     );
 };
 

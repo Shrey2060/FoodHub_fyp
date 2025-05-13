@@ -104,7 +104,7 @@ const Login = () => {
           <div className="form-group">
             <label htmlFor="email">Email Address</label>
             <div className="input-with-icon">
-              <FiMail className="input-icon" />
+              {/* <FiMail className="input-icon" /> */}
               <input
                 id="email"
                 type="email"
@@ -123,7 +123,7 @@ const Login = () => {
           <div className="form-group">
             <label htmlFor="password">Password</label>
             <div className="input-with-icon">
-              <FiLock className="input-icon" />
+              {/* <FiLock className="input-icon" /> */}
               <input
                 id="password"
                 type={showPassword ? "text" : "password"}
@@ -142,7 +142,7 @@ const Login = () => {
                 role="button"
                 tabIndex={0}
               >
-                {showPassword ? <FiEyeOff /> : <FiEye />}
+                {showPassword ? '🙈' : '👁️'}
               </div>
             </div>
           </div>

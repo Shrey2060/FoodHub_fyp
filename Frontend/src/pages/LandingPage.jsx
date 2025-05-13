@@ -14,8 +14,6 @@ const LandingPage = () => {
       <Home />
       <Greeting />
       <DietFood />
-      <Allergies />
-      <Preferences />
       <Chatbot />
     </div>
   )

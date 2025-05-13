@@ -44,18 +44,19 @@
 .signup-btn:hover {
   background-color: #ff5500;
   color: white;
-  transition: background-color 0.3s, transform 0.3s; /* Added transition for transform */
+  transition: background-color 0.3s, transform 0.3s;
   border: none;
-  transform: scale(1.1); /* Adds scale effect */
+  transform: scale(1.1);
 }
 
 .login-btn:hover {
     background-color: #ff5500;
     color: white;
-    transition: background-color 0.3s, transform 0.3s; /* Added transition for transform */
+    transition: background-color 0.3s, transform 0.3s;
     border: none;
-    transform: scale(1.1); /* Adds scale effect */
+    transform: scale(1.1);
 }
+
 .nav-item {
   font-size: 18px;
   background: none; 
@@ -73,7 +74,7 @@
 
 /* Hover effect */
 .nav-item:hover {
-  color: #ff6600; /* Orange text color */
+  color: #ff6600;
 }
 
 /* Underline effect */
@@ -96,12 +97,12 @@
 
 /* Keep underline for active page */
 .nav-item.active {
-  color: #ff6600; /* Keep text orange for active link */
+  color: #ff6600;
   font-weight: 500;
 }
 
 .nav-item.active::after {
-  width: 100%; /* Keep underline visible */
+  width: 100%;
 }
 
 .logout-btn {
@@ -120,9 +121,9 @@
 .logout-btn:hover {
   background-color: #ff5500;
   color: white;
-  transition: background-color 0.3s, transform 0.3s; /* Added transition for transform */
+  transition: background-color 0.3s, transform 0.3s;
   border: none;
-  transform: scale(1.1); /* Adds scale effect */
+  transform: scale(1.1);
 }
 
 .header-content {

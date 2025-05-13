@@ -26,7 +26,7 @@ const ProductPage = () => {
         
         // Group products by category
         const groupedProducts = response.data.products.reduce((acc, product) => {
-          const category = product.category_name || 'Uncategorized';
+          const category = product.category_name || 'We have';
           if (!acc[category]) {
             acc[category] = [];
           }

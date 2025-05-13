@@ -1,0 +1,233 @@
+/* RewardPoints.css */
+
+/* Main container */
+.rewards-container {
+  max-width: 600px;
+  margin: 2rem auto;
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+  padding: 2rem 2.5rem 2.5rem 2.5rem;
+  font-family: 'Segoe UI', Arial, sans-serif;
+}
+
+.rewards-summary h1 {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 2rem;
+  font-weight: 700;
+  color: #222;
+  margin-bottom: 1.5rem;
+}
+
+.points-card {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  background: #fafafa;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  padding: 1.5rem;
+}
+
+.points-info h2 {
+  font-size: 1.3rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.points-balance {
+  font-size: 2.2rem;
+  font-weight: 700;
+  color: #e65100;
+  margin-bottom: 0.25rem;
+}
+
+.total-earned {
+  font-size: 1rem;
+  color: #666;
+  margin-bottom: 1.5rem;
+}
+
+.redeem-section h3 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  color: #222;
+}
+
+.redeem-buttons {
+  display: flex;
+  gap: 1.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.redeem-btn {
+  background: linear-gradient(45deg, #ffd700, #ffa500);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 0.75rem 1.5rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(255, 165, 0, 0.08);
+  cursor: pointer;
+  transition: all 0.2s;
+  opacity: 1;
+}
+
+.redeem-btn:disabled {
+  background: #e0e0e0;
+  color: #aaa;
+  cursor: not-allowed;
+  box-shadow: none;
+  opacity: 0.7;
+}
+
+.rewards-history h2 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: #222;
+  margin-bottom: 1rem;
+}
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.history-item {
+  background: #f5f5f5;
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.03);
+  display: flex;
+  flex-direction: column;
+  font-size: 1rem;
+}
+
+.transaction-info {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  margin-bottom: 0.2rem;
+}
+
+.transaction-type {
+  font-weight: 600;
+  text-transform: capitalize;
+}
+.transaction-type.earned {
+  color: #388e3c;
+}
+.transaction-type.redeemed {
+  color: #d32f2f;
+}
+.transaction-date {
+  color: #888;
+  font-size: 0.95rem;
+}
+.points {
+  font-weight: 700;
+  font-size: 1.1rem;
+}
+.points.earned {
+  color: #388e3c;
+}
+.points.redeemed {
+  color: #d32f2f;
+}
+.no-history {
+  color: #888;
+  font-style: italic;
+  margin-top: 1rem;
+}
+.spinner {
+  animation: spin 1s linear infinite;
+}
+@keyframes spin {
+  100% { transform: rotate(360deg); }
+}
+.icon {
+  color: #e65100;
+}
+@media (max-width: 700px) {
+  .rewards-container {
+    padding: 1rem;
+  }
+  .rewards-summary h1 {
+    font-size: 1.3rem;
+  }
+  .points-balance {
+    font-size: 1.5rem;
+  }
+  .redeem-buttons {
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+}
+
+.home-btn {
+  display: flex;
+  align-items: center;
+  background: #e65100;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 0.5rem 1.2rem;
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 1.5rem;
+  cursor: pointer;
+  transition: background 0.2s, box-shadow 0.2s;
+  box-shadow: 0 2px 8px rgba(230, 81, 0, 0.08);
+}
+.home-btn:hover {
+  background: #ff9800;
+  color: #fff;
+}
+
+.history-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.clear-history-btn {
+    background: linear-gradient(45deg, #ff5252, #ff1744);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 0.5rem 1rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.clear-history-btn:hover {
+    background: linear-gradient(45deg, #ff1744, #d50000);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(255, 23, 68, 0.2);
+}
+
+.clear-history-btn:disabled {
+    background: #e0e0e0;
+    color: #aaa;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+
+.clear-history-btn .spinner {
+    font-size: 0.8rem;
+} 

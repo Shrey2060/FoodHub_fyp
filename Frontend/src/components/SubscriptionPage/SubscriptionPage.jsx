@@ -33,6 +33,14 @@ const SubscriptionPage = ({ onClose, onSubscribe }) => {
   const location = useLocation();
   const isDirectNavigation = !onClose; // Check if component was opened directly via route
   
+  // AUTH CHECK: If not logged in, redirect to login
+  useEffect(() => {
+    const token = sessionStorage.getItem('authToken');
+    if (!token) {
+      navigate('/login', { replace: true });
+    }
+  }, [navigate]);
+
   // Handle direct navigation close
   const handleClose = () => {
     if (isDirectNavigation) {
@@ -49,6 +57,7 @@ const SubscriptionPage = ({ onClose, onSubscribe }) => {
   // Update useEffect to handle return from Khalti payment
   useEffect(() => {
     const handleKhaltiReturn = async () => {
+      console.log('handleKhaltiReturn called');
       const urlParams = new URLSearchParams(window.location.search);
       const subscriptionType = urlParams.get('subscription_type');
       const amount = urlParams.get('amount');
@@ -116,9 +125,13 @@ const SubscriptionPage = ({ onClose, onSubscribe }) => {
           // Mark this payment as processed before confirming subscription
           sessionStorage.setItem(`processed_payment_${pidx}`, 'true');
 
-          // Confirm subscription
+          // Before subscribe call
+          console.log('Payment verified, about to call /api/subscriptions/subscribe with:', {
+            plan_id: storedSubscription.plan_id,
+            payment_method: 'khalti'
+          });
           const confirmResponse = await axios.post(
-            'http://localhost:5000/api/subscriptions/confirm',
+            'http://localhost:5000/api/subscriptions/subscribe',
             {
               plan_id: storedSubscription.plan_id,
               payment_method: 'khalti'
@@ -130,9 +143,8 @@ const SubscriptionPage = ({ onClose, onSubscribe }) => {
               }
             }
           );
+          console.log('Subscription API called!');
           
-          console.log("Subscription confirmation response:", confirmResponse.data);
-
           if (!confirmResponse.data.success) {
             toast.dismiss(loadingToast);
             toast.error('Subscription confirmation failed');

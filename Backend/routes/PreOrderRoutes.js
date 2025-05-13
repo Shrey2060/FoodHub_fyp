@@ -3,6 +3,26 @@ const router = express.Router();
 const pool = require('../config/db');
 const authenticateToken = require('../middleware/authenticateToken');
 const { isAdmin } = require('../middleware/auth');
+const nodemailer = require('nodemailer');
+
+async function sendPreOrderDeliveredEmail(to, preOrderId) {
+    let transporter = nodemailer.createTransport({
+        service: 'gmail',
+        auth: {
+            user: process.env.EMAIL_USER,
+            pass: process.env.EMAIL_PASS
+        }
+    });
+
+    let mailOptions = {
+        from: process.env.EMAIL_USER,
+        to: to,
+        subject: 'Your FoodHUB Pre-Order is Delivered!',
+        text: `The delivery of your pre-order #${preOrderId} is completed. Thank you for ordering with FoodHUB!`
+    };
+
+    await transporter.sendMail(mailOptions);
+}
 
 // Create a new pre-order
 router.post('/', authenticateToken, async (req, res) => {
@@ -202,6 +222,21 @@ router.patch('/:id/status', authenticateToken, isAdmin, async (req, res) => {
                 success: false,
                 message: "Pre-order not found"
             });
+        }
+
+        if (status === 'delivered') {
+            // Fetch user's email
+            const [userRows] = await pool.query(
+                'SELECT u.email FROM pre_orders po JOIN users u ON po.user_id = u.id WHERE po.id = ?',
+                [id]
+            );
+            if (userRows.length > 0) {
+                try {
+                    await sendPreOrderDeliveredEmail(userRows[0].email, id);
+                } catch (emailErr) {
+                    console.error('Failed to send pre-order delivered email:', emailErr);
+                }
+            }
         }
 
         res.json({

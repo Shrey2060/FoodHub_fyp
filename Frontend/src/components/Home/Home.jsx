@@ -2,6 +2,7 @@ import React from "react";
 import "./home.css";
 import allustration from "../../assets/images/Allustration.png";
 import { Link } from "react-router-dom";
+import { FaGift } from 'react-icons/fa';
 
 const Home = () => {
   return (
@@ -17,25 +18,38 @@ const Home = () => {
         </div>
         <div className="btn-component">
           <Link to="/products">
-          <button
-            className={`order ${
-              location.pathname === "/products" ? "active" : ""
-            }`}
-          >
-            Order Now 🛒
-          </button>
-          
+            <button
+              className={`order ${
+                location.pathname === "/products" ? "active" : ""
+              }`}
+            >
+              Order Now 🛒
+            </button>
           </Link>
 
           <Link to="/bundles">
-          <button
-            className={`items ${
-              location.pathname === "/bundles" ? "active" : ""
-            }`}
-          >
-            See items
-          </button>
+            <button
+              className={`items ${
+                location.pathname === "/bundles" ? "active" : ""
+              }`}
+            >
+              See items
+            </button>
           </Link>
+
+          <Link to="/rewards" className="rewards">
+            <FaGift style={{ marginRight: '8px' }} /> Rewards
+          </Link>
+
+          <div className="subscribe-row">
+            <Link to="/subscribe">
+              <button
+                className="subscribe"
+              >
+                Subscribe
+              </button>
+            </Link>
+          </div>
         </div>
       </div>
 

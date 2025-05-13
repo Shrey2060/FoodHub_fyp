@@ -54,69 +54,50 @@ router.get('/my-subscription', authenticateToken, async (req, res) => {
     }
 });
 
-// Subscribe to a plan
+// Simple and robust subscribe endpoint with detailed logging
 router.post('/subscribe', authenticateToken, async (req, res) => {
     const connection = await pool.getConnection();
     try {
         await connection.beginTransaction();
-
         const { plan_id, payment_method } = req.body;
-
-        // Verify plan exists and is active
-        const [plans] = await connection.query(
-            'SELECT * FROM subscription_plans WHERE id = ? AND is_active = true',
-            [plan_id]
-        );
-
+        console.log('[SUBSCRIBE] Incoming:', { user_id: req.user.id, plan_id, payment_method });
+        if (!plan_id || !payment_method) {
+            await connection.rollback();
+            console.log('[SUBSCRIBE] Missing plan_id or payment_method');
+            return res.status(400).json({ success: false, message: 'plan_id and payment_method are required' });
+        }
+        // Always insert a new subscription
+        const now = new Date();
+        // Get plan duration
+        const [plans] = await connection.query('SELECT duration_months FROM subscription_plans WHERE id = ?', [plan_id]);
+        console.log('[SUBSCRIBE] Plan lookup:', plans);
         if (plans.length === 0) {
             await connection.rollback();
-            return res.status(404).json({
-                success: false,
-                message: 'Subscription plan not found or inactive'
-            });
+            console.log('[SUBSCRIBE] Plan not found');
+            return res.status(404).json({ success: false, message: 'Plan not found' });
         }
-
-        const plan = plans[0];
-
-        // Calculate end date and next billing date
-        const now = new Date();
+        const duration = plans[0].duration_months;
         const endDate = new Date(now);
-        endDate.setMonth(endDate.getMonth() + plan.duration_months);
-        
+        endDate.setMonth(endDate.getMonth() + duration);
         const nextBillingDate = new Date(now);
         nextBillingDate.setMonth(nextBillingDate.getMonth() + 1);
-
-        // Deactivate any existing active subscriptions
-        await connection.query(
-            `UPDATE subscriptions 
-             SET status = 'expired', updated_at = NOW()
-             WHERE user_id = ? AND status = 'active'`,
-            [req.user.id]
-        );
-
-        // Create new subscription
+        console.log('[SUBSCRIBE] About to insert subscription:', {
+            user_id: req.user.id, plan_id, payment_method, endDate, nextBillingDate
+        });
         const [result] = await connection.query(
             `INSERT INTO subscriptions (
-                user_id, plan_id, status, payment_method, 
-                start_date, end_date, next_billing_date
-            )
-            VALUES (?, ?, 'active', ?, NOW(), ?, ?)`,
+                user_id, plan_id, status, payment_method, start_date, end_date, next_billing_date
+            ) VALUES (?, ?, 'active', ?, NOW(), ?, ?)`,
             [req.user.id, plan_id, payment_method, endDate, nextBillingDate]
         );
-
+        console.log('[SUBSCRIBE] Insert result:', result);
         await connection.commit();
-
-        res.json({
-            success: true,
-            message: 'Successfully subscribed to plan',
-            subscription_id: result.insertId,
-            end_date: endDate,
-            next_billing_date: nextBillingDate
-        });
+        console.log('[SUBSCRIBE] Subscription committed for user', req.user.id);
+        res.json({ success: true, message: 'Subscription successful', subscription_id: result.insertId });
     } catch (error) {
         await connection.rollback();
-        console.error('Error creating subscription:', error);
-        res.status(500).json({ success: false, message: 'Error creating subscription' });
+        console.error('[SUBSCRIBE] Error subscribing:', error);
+        res.status(500).json({ success: false, message: 'Error subscribing', error: error.message });
     } finally {
         connection.release();
     }
@@ -172,15 +153,18 @@ router.post('/confirm', authenticateToken, async (req, res) => {
         await connection.beginTransaction();
 
         const { plan_id, payment_method } = req.body;
+        console.log('[SUBSCRIPTION CONFIRM] User:', req.user.id, 'Plan:', plan_id, 'Payment method:', payment_method);
 
         // Verify plan exists and is active
         const [plans] = await connection.query(
             'SELECT * FROM subscription_plans WHERE id = ? AND is_active = true',
             [plan_id]
         );
+        console.log('[SUBSCRIPTION CONFIRM] Plan lookup result:', plans);
 
         if (plans.length === 0) {
             await connection.rollback();
+            console.log('[SUBSCRIPTION CONFIRM] Plan not found or inactive');
             return res.status(404).json({
                 success: false,
                 message: 'Subscription plan not found or inactive'
@@ -193,7 +177,6 @@ router.post('/confirm', authenticateToken, async (req, res) => {
         const now = new Date();
         const endDate = new Date(now);
         endDate.setMonth(endDate.getMonth() + plan.duration_months);
-        
         const nextBillingDate = new Date(now);
         nextBillingDate.setMonth(nextBillingDate.getMonth() + 1);
 
@@ -204,6 +187,7 @@ router.post('/confirm', authenticateToken, async (req, res) => {
              WHERE user_id = ? AND status = 'active'`,
             [req.user.id]
         );
+        console.log('[SUBSCRIPTION CONFIRM] Deactivated existing subscriptions for user', req.user.id);
 
         // Create new subscription
         const [result] = await connection.query(
@@ -214,8 +198,10 @@ router.post('/confirm', authenticateToken, async (req, res) => {
             VALUES (?, ?, 'active', ?, NOW(), ?, ?)`,
             [req.user.id, plan_id, payment_method, endDate, nextBillingDate]
         );
+        console.log('[SUBSCRIPTION CONFIRM] Insert result:', result);
 
         await connection.commit();
+        console.log('[SUBSCRIPTION CONFIRM] Subscription committed for user', req.user.id);
 
         res.json({
             success: true,
@@ -226,7 +212,7 @@ router.post('/confirm', authenticateToken, async (req, res) => {
         });
     } catch (error) {
         await connection.rollback();
-        console.error('Error activating subscription:', error);
+        console.error('[SUBSCRIPTION CONFIRM] Error activating subscription:', error);
         res.status(500).json({ 
             success: false, 
             message: 'Error activating subscription',
@@ -284,7 +270,7 @@ router.get('/admin/subscriptions', authenticateToken, isAdmin, async (req, res) 
     try {
         const [subscriptions] = await pool.query(
             `SELECT s.*, u.name as user_name, u.email as user_email,
-                    p.name as plan_name, p.price, p.features, p.duration_months as duration
+                    p.name as plan_name, p.description as plan_description, p.price as plan_price, p.features, p.duration_months as duration
              FROM subscriptions s
              JOIN users u ON s.user_id = u.id
              JOIN subscription_plans p ON s.plan_id = p.id
@@ -479,6 +465,17 @@ router.delete('/admin/plans/:planId', authenticateToken, isAdmin, async (req, re
     } catch (error) {
         console.error('Error deactivating subscription plan:', error);
         res.status(500).json({ success: false, message: 'Error deactivating subscription plan' });
+    }
+});
+
+// TEMPORARY DEBUG ENDPOINT: List all subscriptions (raw)
+router.get('/admin/debug/all-subscriptions', authenticateToken, isAdmin, async (req, res) => {
+    try {
+        const [subs] = await pool.query('SELECT * FROM subscriptions ORDER BY created_at DESC');
+        res.json({ success: true, subscriptions: subs });
+    } catch (error) {
+        console.error('Debug: Error fetching all subscriptions:', error);
+        res.status(500).json({ success: false, message: 'Error fetching subscriptions', error: error.message });
     }
 });
 

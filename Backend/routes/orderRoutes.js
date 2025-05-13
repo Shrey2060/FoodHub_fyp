@@ -3,6 +3,8 @@ const router = express.Router();
 const mysql = require('mysql2/promise');
 const { authenticateToken, isAdmin } = require('../middleware/auth');
 const axios = require('axios');
+const { cancelRewardPoints } = require('../controllers/rewardController');
+const nodemailer = require('nodemailer');
 require('dotenv').config();
 
 // Create a connection pool
@@ -302,6 +304,38 @@ router.put('/admin/:orderId', authenticateToken, isAdmin, async (req, res) => {
             }
         }
 
+        // Send email if order is completed
+        if (notificationMessage && status === 'completed') {
+            // Fetch user's email
+            const [userRows] = await connection.query(
+                'SELECT email FROM users WHERE id = ?',
+                [currentOrder[0].user_id]
+            );
+            if (userRows.length > 0) {
+                try {
+                    await sendOrderCompletedEmail(userRows[0].email, orderId);
+                } catch (emailErr) {
+                    console.error('Failed to send order completed email:', emailErr);
+                }
+            }
+        }
+
+        // Send email if order is cancelled
+        if (notificationMessage && status === 'cancelled') {
+            // Fetch user's email
+            const [userRows] = await connection.query(
+                'SELECT email FROM users WHERE id = ?',
+                [currentOrder[0].user_id]
+            );
+            if (userRows.length > 0) {
+                try {
+                    await sendOrderCancelledEmail(userRows[0].email, orderId);
+                } catch (emailErr) {
+                    console.error('Failed to send order cancelled email:', emailErr);
+                }
+            }
+        }
+
         // Fetch updated order with all details
         const [updatedOrder] = await connection.query(
             `SELECT o.*, u.name as customer_name,
@@ -359,7 +393,7 @@ function getStatusNotificationMessage(status) {
         case 'processing':
             return 'Your order is now being processed! We\'ll start preparing your delicious food soon.';
         case 'completed':
-            return 'Great news! Your order has been delivered. Enjoy your meal!';
+            return 'The delivery of your order is completed';
         case 'cancelled':
             return 'Your order has been cancelled. We apologize for any inconvenience.';
         default:
@@ -608,6 +642,15 @@ router.put('/:orderId/cancel', authenticateToken, async (req, res) => {
             });
         }
 
+        // Cancel reward points if they were awarded
+        let cancelledPoints = 0;
+        try {
+            cancelledPoints = await cancelRewardPoints(req.user.id, orderId);
+        } catch (error) {
+            console.error('Error cancelling reward points:', error);
+            // Continue with order cancellation even if reward points cancellation fails
+        }
+
         // Create a notification for the admin
         await connection.query(
             `INSERT INTO notifications (user_id, message, type, order_id, is_read)
@@ -619,7 +662,8 @@ router.put('/:orderId/cancel', authenticateToken, async (req, res) => {
 
         res.json({
             success: true,
-            message: 'Order cancelled successfully'
+            message: 'Order cancelled successfully',
+            cancelledPoints: cancelledPoints
         });
     } catch (error) {
         await connection.rollback();
@@ -795,9 +839,11 @@ router.post('/verify-khalti', authenticateToken, async (req, res) => {
                      payment_method = 'khalti',
                      is_confirmed = TRUE,
                      status = 'processing',
-                     updated_at = CURRENT_TIMESTAMP
+                     updated_at = CURRENT_TIMESTAMP,
+                     transaction_id = ?,
+                     khalti_payment_idx = ?
                  WHERE id = ?`,
-                [orderId]
+                [verificationResponse.data.idx, verificationResponse.data.idx, orderId]
             );
 
             // Create a notification for the admin
@@ -934,5 +980,45 @@ router.post('/admin/:orderId/confirm', authenticateToken, isAdmin, async (req, r
         });
     }
 });
+
+// Helper to send order completed email
+async function sendOrderCompletedEmail(to, orderId) {
+    let transporter = nodemailer.createTransport({
+        service: 'gmail',
+        auth: {
+            user: process.env.EMAIL_USER,
+            pass: process.env.EMAIL_PASS
+        }
+    });
+
+    let mailOptions = {
+        from: process.env.EMAIL_USER,
+        to: to,
+        subject: 'Your FoodHUB Order is Delivered!',
+        text: `The delivery of your order #${orderId} is completed. Thank you for ordering with FoodHUB!`
+    };
+
+    await transporter.sendMail(mailOptions);
+}
+
+// Helper to send order cancelled email
+async function sendOrderCancelledEmail(to, orderId) {
+    let transporter = nodemailer.createTransport({
+        service: 'gmail',
+        auth: {
+            user: process.env.EMAIL_USER,
+            pass: process.env.EMAIL_PASS
+        }
+    });
+
+    let mailOptions = {
+        from: process.env.EMAIL_USER,
+        to: to,
+        subject: 'Your FoodHUB Order was Cancelled',
+        text: `We regret to inform you that your order #${orderId} was cancelled by the admin due to technical reasons. If you have any questions, please contact support.`
+    };
+
+    await transporter.sendMail(mailOptions);
+}
 
 module.exports = router;

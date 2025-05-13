@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
+import { useNavigate } from 'react-router-dom';
 import "./Subscription.css";
 import SubscriptionPage from '../SubscriptionPage/SubscriptionPage';
 
@@ -8,6 +9,7 @@ const Subscription = () => {
     const [showModal, setShowModal] = useState(false);
     const [activeSubscription, setActiveSubscription] = useState(null);
     const [loading, setLoading] = useState(true);
+    const navigate = useNavigate();
 
     useEffect(() => {
         fetchSubscription();
@@ -64,6 +66,16 @@ const Subscription = () => {
         }
     };
 
+    const handleSubscribeClick = () => {
+        const token = sessionStorage.getItem('authToken');
+        if (!token) {
+            toast.error('Please log in to subscribe');
+            navigate('/login');
+            return;
+        }
+        setShowModal(true);
+    };
+
     if (loading) {
         return null; // Don't show anything while loading
     }
@@ -82,7 +94,7 @@ const Subscription = () => {
                     </button>
                 </div>
             ) : (
-                <button className='subscription-btn' onClick={() => setShowModal(true)}>
+                <button className='subscription-btn' onClick={handleSubscribeClick}>
                     Subscribe Now
                 </button>
             )}
